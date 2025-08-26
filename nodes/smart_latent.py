@@ -54,8 +54,8 @@ class SmartLatent:
             },
         }
 
-    RETURN_TYPES = ("LATENT", "STRING")
-    RETURN_NAMES = ("latent", "dims_json")
+    RETURN_TYPES = ("LATENT", "STRING", "INT", "INT")
+    RETURN_NAMES = ("latent", "dims_json", "width", "height")
     FUNCTION = "build"
     CATEGORY = "itsjustregi / SDXL Adherence"
 
@@ -85,7 +85,7 @@ class SmartLatent:
         if mode == "empty":
             # allocate latent zeros (Comfy expects a dict with 'samples')
             latent = torch.zeros([batch, 4, H // 8, W // 8], device="cpu")
-            return ({"samples": latent}, json.dumps(info))
+            return ({"samples": latent}, json.dumps(info), W, H)
 
         # encode_image
         assert image is not None, "SmartLatent: image input required in encode_image mode"
@@ -109,4 +109,29 @@ class SmartLatent:
         else:
             latent = vae.encode(img)
 
-        return (latent, json.dumps(info))
+        # Normalize latent to dict format and derive true dims from samples
+        if isinstance(latent, dict) and "samples" in latent:
+            samples = latent["samples"]
+            out_latent = latent
+        else:
+            samples = latent
+            out_latent = {"samples": latent}
+        try:
+            h8 = int(samples.shape[-2])
+            w8 = int(samples.shape[-1])
+            has_shape = hasattr(samples, "shape") and len(samples.shape) >= 1
+            B = int(samples.shape[0]) if has_shape else batch
+            H_actual = h8 * 8
+            W_actual = w8 * 8
+            info = {
+                "mode": mode,
+                "W": W_actual,
+                "H": H_actual,
+                "batch": B,
+                "tile": tile_size,
+                "down_by_64": down,
+            }
+            return (out_latent, json.dumps(info), W_actual, H_actual)
+        except Exception:
+            # Fallback to requested dims
+            return (out_latent, json.dumps(info), W, H)
