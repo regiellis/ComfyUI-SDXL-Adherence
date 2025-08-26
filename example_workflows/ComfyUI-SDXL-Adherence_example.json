@@ -1,0 +1,23 @@
+{
+  "name": "ComfyUI-SDXL-Adherence Example Workflow",
+  "nodes": [
+    {
+      "id": 1,
+      "inputs": {
+        "input_bool": true,
+        "input_choice": "option1",
+        "input_number": 42,
+        "input_optional": "Optional value",
+        "input_text": "Hello, Comfy!"
+      },
+      "outputs": {
+        "output": 1
+      },
+      "type": "ComfyUI-SDXL-Adherence"
+    }
+  ],
+  "links": [],
+  "extra": {
+    "description": "Auto-generated example workflow for node 'ComfyUI-SDXL-Adherence'. Edit as needed."
+  }
+}

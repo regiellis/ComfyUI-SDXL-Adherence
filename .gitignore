@@ -1,0 +1,107 @@
+########################
+# Python
+########################
+__pycache__/
+*.py[cod]
+*$py.class
+
+########################
+# Virtual envs / Python tools
+########################
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+########################
+# Environment files
+########################
+.env
+.env.*
+.envrc
+
+########################
+# Packaging / distribution
+########################
+.Python
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+
+########################
+# Tests / coverage / type checking
+########################
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+nosetests.xml
+*.py,cover
+*.cover
+htmlcov/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+########################
+# Logs
+########################
+*.log
+logs/
+
+########################
+# Node/JS (optional front-end)
+########################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+########################
+# Editor / OS files
+########################
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+########################
+# Jupyter
+########################
+.ipynb_checkpoints/
+
+########################
+# ComfyUI-related large model/binary files
+########################
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+*.onnx
+*.gguf
+
+########################
+# Local runtime/output folders (avoid committing generated data)
+########################
+outputs/
+output/
+temp/
+tmp/
+__workdir__/
+
+########################
+# Keep important project assets tracked
+########################
+!example_workflows/
+!src/
+!js/
