@@ -134,6 +134,11 @@ class SDXLDualClipEncode:
                     "FLOAT",
                     {"default": 0.6, "min": 0.0, "max": 1.5},
                 ),
+                # Optional SDXL conditioning metadata
+                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
+                "target_width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
+                "target_height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
             },
         }
 
@@ -158,6 +163,10 @@ class SDXLDualClipEncode:
         te_lora_paths="",
         te_lora_scales_openclip=0.7,
         te_lora_scales_clipL=0.6,
+        width: int = 1024,
+        height: int = 1024,
+        target_width: int = 1024,
+        target_height: int = 1024,
     ):
         # negative path
         if role == "negative":
@@ -170,16 +179,27 @@ class SDXLDualClipEncode:
         early_kept, early_over = _truncate_to_tokens(clip, early_text or "", token_budget)
         late_combined = ", ".join([t for t in [early_over, late_text] if t]).strip(", ")
 
-        cond_early = (
-            _encode_text(clip, early_kept, clip_skip_openclip, clip_skip_clipL)
-            if early_kept
-            else []
-        )
-        cond_late = (
-            _encode_text(clip, late_combined, clip_skip_openclip, clip_skip_clipL)
-            if late_combined
-            else []
-        )
+        def _encode_with_dims(text: str):
+            if not text:
+                return []
+            # Try passing SDXL conditioning dims when supported; fallback to plain encode
+            if hasattr(clip, "encode"):
+                try:
+                    return clip.encode(
+                        text,
+                        clip_skip_g=clip_skip_openclip,
+                        clip_skip_l=clip_skip_clipL,
+                        width=width,
+                        height=height,
+                        target_width=target_width,
+                        target_height=target_height,
+                    )
+                except TypeError:
+                    return _encode_text(clip, text, clip_skip_openclip, clip_skip_clipL)
+            return _encode_text(clip, text, clip_skip_openclip, clip_skip_clipL)
+
+        cond_early = _encode_with_dims(early_kept)
+        cond_late = _encode_with_dims(late_combined)
         cond = _blend_conditionings(cond_early, cond_late, early_late_mix)
 
         if essentials_text and essentials_lock > 0.0:
