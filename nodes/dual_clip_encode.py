@@ -139,6 +139,7 @@ class SDXLDualClipEncode:
                 "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
                 "target_width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
                 "target_height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
+                "auto_tune_by_resolution": ("BOOL", {"default": True}),
             },
         }
 
@@ -167,6 +168,7 @@ class SDXLDualClipEncode:
         height: int = 1024,
         target_width: int = 1024,
         target_height: int = 1024,
+        auto_tune_by_resolution: bool = True,
     ):
         # negative path
         if role == "negative":
@@ -178,6 +180,18 @@ class SDXLDualClipEncode:
         # Budget early text to token limit; overflow goes to late
         early_kept, early_over = _truncate_to_tokens(clip, early_text or "", token_budget)
         late_combined = ", ".join([t for t in [early_over, late_text] if t]).strip(", ")
+
+        # Resolution-aware auto-tuning of weights (optional)
+        if auto_tune_by_resolution:
+            try:
+                long_side = max(width, height)
+                if long_side > 1280:
+                    early_late_mix = max(early_late_mix, 0.6)
+                    essentials_lock = max(essentials_lock, 0.4)
+                elif long_side < 896:
+                    early_late_mix = min(early_late_mix, 0.3)
+            except Exception:
+                pass
 
         def _encode_with_dims(text: str):
             if not text:
