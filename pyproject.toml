@@ -3,15 +3,12 @@
 name = "ComfyUI_SDXL_Adherence"
 version = "1.0.0"
 description = "ComfyUI nodes that improve SDXL prompt adherence and any-size/tiled VAE workflows."
-readme = "README.md"
-requires-python = ">=3.9"
 authors = [{ name = "Regi Ellis" }]
-license = { file = "LICENSE" }
+requires-python = ">=3.9"
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/regiellis/ComfyUI-SDXL-Adherence"
-Repository = "https://github.com/regiellis/ComfyUI-SDXL-Adherence.git"
+Repository = "https://github.com/regiellis/ComfyUI-SDXL-Adherence"
 Issues = "https://github.com/regiellis/ComfyUI-SDXL-Adherence/issues"
 
 [tool.comfy]
