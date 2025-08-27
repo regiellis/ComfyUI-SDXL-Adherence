@@ -153,3 +153,13 @@ SDXL already has the tools and community, and with these nodes, it closes the ga
 MIT — use it, hack it, ship it.
 Just don’t try to sell it as “secret sauce.”
 
+---
+
+## Documentation
+
+- Smart Latent: docs/SmartLatent.md
+- SDXL Dual CLIP Encode: docs/SDXLDualClipEncode.md
+- SDXL Prompt Styler: docs/SDXLPromptStyler.md
+- Align Hints To Latent: docs/AlignHintsToLatent.md
+- Crop By BBox: docs/CropByBBox.md
+
