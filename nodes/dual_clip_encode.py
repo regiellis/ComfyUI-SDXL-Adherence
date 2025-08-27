@@ -1,233 +1,187 @@
-# ComfyUI-SDXL-Adherence/nodes/dual_clip_encode.py
-import re
+"""SDXL Dual CLIP Encode (pos/neg)
 
-# Comfy may expose different clip encode utilities; we keep it generic
+Builds canonical ComfyUI SDXL CONDITIONING lists using the pooled-output path.
+Tokenizes and calls clip.encode_from_tokens(..., return_pooled=True)
+- Guarantees pooled_output on every entry
+- Blends early/late/essentials with per-entry weights
+"""
 
+import torch
 
-def _encode_text(clip, text: str, clip_skip_openclip: int, clip_skip_clipL: int):
-    # Attempt to call a unified encode if provided by the CLIP object
-    # Fall back to basic encode(text)
-    if hasattr(clip, "encode"):
-        try:
-            return clip.encode(text, clip_skip_g=clip_skip_openclip, clip_skip_l=clip_skip_clipL)
-        except TypeError:
-            return clip.encode(text)
-    raise AttributeError("Provided CLIP object does not support encode(text)")
+# --- helpers ---------------------------------------------------------------
 
-
-def _blend_conditionings(cond_a, cond_b, alpha: float):
-    if not cond_b or alpha <= 0.0:
-        return cond_a
-    if alpha >= 1.0:
-        return cond_b
-    # naive blend by adding entries with weight alpha
-    merged = list(cond_a)
-    for c in cond_b:
-        merged.append(
-            {
-                "conditioning": c.get("conditioning", c),
-                "pooled_output": c.get("pooled_output", None),
-                "weight": alpha,
-            }
-        )
-    return merged
-
-
-def _approx_token_len(text: str) -> int:
-    # crude fallback: words + punctuation chunks
-    toks = re.findall(r"\w+|[^\s\w]", text)
-    return max(1, len(toks))
-
-
-def _token_len(clip, text: str) -> int:
-    # Try model tokenizer, else fallback
+def _encode_text_tokens(clip, tokens, clip_skip_g: int, clip_skip_l: int):
+    """
+    Preferred path: returns (cond[B,T,D], pooled[B,D]) with pooled non-None.
+    We try the most specific signature first, then gracefully degrade.
+    """
+    # Most recent CLIP objects support return_pooled + clip_skip_g/clip_skip_l
     try:
-        if hasattr(clip, "tokenize"):
-            t = clip.tokenize(text)
-            if hasattr(t, "shape"):
-                return int(t.shape[-1])
-            try:
-                return len(t)
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return _approx_token_len(text)
+        cond, pooled = clip.encode_from_tokens(
+            tokens, return_pooled=True, clip_skip_g=clip_skip_g, clip_skip_l=clip_skip_l
+        )
+        return cond, pooled
+    except TypeError:
+        # Older signature (no explicit clip_skip args)
+        cond, pooled = clip.encode_from_tokens(tokens, return_pooled=True)
+        return cond, pooled
+    except AttributeError as err:
+        # Fallback: no encode_from_tokens method; use encode on string path
+        raise RuntimeError(
+            "CLIP object missing encode_from_tokens(); use a recent ComfyUI build or adapt encoder to your clip class."
+        ) from err
 
 
-def _truncate_to_tokens(clip, text: str, budget: int) -> tuple[str, str]:
-    if not text or not text.strip():
-        return "", ""
-    # Greedy by chunks, then words
-    chunks = [p.strip() for p in re.split(r"[;\n]+|,(?=\s*[^\d])", text) if p.strip()]
-    kept = []
-    for i, ch in enumerate(chunks):
-        test = ", ".join(kept + [ch]) if kept else ch
-        if _token_len(clip, test) <= budget:
-            kept.append(ch)
+def _encode_text_string(clip, text: str, clip_skip_g: int, clip_skip_l: int):
+    """
+    Safe encode from string: tokenize first so we control pooled creation.
+    """
+    if text is None:
+        text = ""
+    tokens = clip.tokenize(text)
+    return _encode_text_tokens(clip, tokens, clip_skip_g, clip_skip_l)
+
+
+def _cond_entry(cond: torch.Tensor, pooled: torch.Tensor, weight: float = 1.0):
+    """
+    Canonical CONDITIONING entry for SDXL in Comfy:
+      [cond_tensor(B,T,D), {"pooled_output": pooled(B,D), "weight": float}]
+    """
+    if pooled is None:
+        # True fix: pooled MUST exist for SDXL ADM. Synthesize only as last resort.
+        if cond.ndim == 3:
+            pooled = cond.mean(dim=1)
+        elif cond.ndim == 2:
+            pooled = torch.zeros((cond.shape[0], cond.shape[1]), device=cond.device, dtype=cond.dtype)
         else:
-            # try finer word split for the last chunk
-            words = [w for w in re.split(r"\s+", ch) if w]
-            for j in range(len(words)):
-                test2 = ", ".join(kept + [" ".join(words[: j + 1])])
-                if _token_len(clip, test2) <= budget:
-                    pass
-                else:
-                    kept_text = ", ".join(kept + [" ".join(words[:j])]).strip(", ")
-                    rest = []
-                    if j < len(words):
-                        rest.append(" ".join(words[j:]).strip())
-                    rest.extend(chunks[i + 1 :])
-                    return kept_text, ", ".join([r for r in rest if r]).strip(", ")
-            # whole chunk fits if loop didn't return
-            kept.append(ch)
-    kept_text = ", ".join(kept).strip(", ")
-    return kept_text, ""
+            raise ValueError(f"Unexpected 'cond' shape {tuple(cond.shape)}; cannot synthesize pooled.")
+
+    # ensure plain float for weight (not a Tensor)
+    w = float(weight)
+    return [cond, {"pooled_output": pooled, "weight": w}]
 
 
-def _apply_te_loras(clip, paths_str: str, scale_g: float, scale_l: float):
-    if not paths_str:
+def _blend_append(dst: list, src: list, scale: float):
+    """
+    Append entries from src into dst with a weight scale, preserving pooled_output.
+    """
+    if not src or scale is None:
         return
-    paths = [p.strip() for p in paths_str.split(",") if p.strip()]
-    for p in paths:
-        applied = False
-        for meth in ("apply_te_lora", "load_te_lora", "add_te_lora", "load_text_lora"):
-            if hasattr(clip, meth):
-                try:
-                    getattr(clip, meth)(p, scale_g, scale_l)
-                    applied = True
-                    break
-                except Exception:
-                    continue
-        if not applied and hasattr(clip, "load_lora"):
-            try:
-                # best-effort generic API
-                clip.load_lora(p, text_encoder=True, unet=False, scale_g=scale_g, scale_l=scale_l)
-            except Exception:
-                pass
+    s = float(scale)
+    for entry in src:
+        # entry must be [cond, meta]
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            raise ValueError("Conditioning entry must be [cond, {meta}]")
+        cond, meta = entry
+        pooled = meta.get("pooled_output", None)
+        w = float(meta.get("weight", 1.0)) * s
+        dst.append(_cond_entry(cond, pooled, w))
+
+
+def _encode_as_list(clip, text: str, clip_skip_g: int, clip_skip_l: int, weight: float = 1.0) -> list:
+    cond, pooled = _encode_text_string(clip, text or "", clip_skip_g, clip_skip_l)
+    return [_cond_entry(cond, pooled, weight)]
+
+
+def _res_aware(mix: float, lock: float, width: int, height: int) -> tuple[float, float]:
+    try:
+        long_side = max(int(width), int(height))
+    except Exception as err:
+        return mix, lock
+    if long_side > 1280:
+        return (max(mix, 0.6), max(lock, 0.4))
+    if long_side < 896:
+        return (min(mix, 0.3), lock)
+    return (mix, lock)
+
+
+# --- node ------------------------------------------------------------------
 
 
 class SDXLDualClipEncode:
+    """Encode positive and negative SDXL conditioning with pooled_output present."""
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "clip": ("CLIP",),
-                "role": (["positive", "negative"],),
-                "early_text": ("STRING", {"multiline": True}),
-                "late_text": ("STRING", {"multiline": True, "default": ""}),
-                "neg_text": ("STRING", {"multiline": True, "default": ""}),
-                "essentials_text": ("STRING", {"multiline": False, "default": ""}),
-                "early_late_mix": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0}),
-                "essentials_lock": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0}),
-                "token_budget": ("INT", {"default": 77, "min": 48, "max": 150}),
-                "clip_skip_openclip": ("INT", {"default": 1, "min": 0, "max": 2}),
-                "clip_skip_clipL": ("INT", {"default": 0, "min": 0, "max": 2}),
+                "clip": ("CLIP", {"tooltip": "SDXL CLIP from CheckpointLoader (dual encoders)."}),
+                "early_text": ("STRING", {"multiline": True, "tooltip": "Primary prompt (subject, key attributes)."}),
+                "late_text": ("STRING", {"multiline": True, "default": "", "tooltip": "Long-tail aesthetics blended with early by early_late_mix."}),
+                "neg_text": ("STRING", {"multiline": True, "default": "", "tooltip": "Negative prompt."}),
+                "essentials_text": ("STRING", {"multiline": False, "default": "", "tooltip": "Keywords to reinforce with extra weight."}),
+                "early_late_mix": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "tooltip": "Blend weight for late_text (0=ignore late, 1=equal weight)."}),
+                "essentials_lock": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "tooltip": "Additional weight applied to essentials_text."}),
+                "clip_skip_openclip": ("INT", {"default": 1, "min": 0, "max": 2, "tooltip": "OpenCLIP skip (global encoder)."}),
+                "clip_skip_clipL": ("INT", {"default": 0, "min": 0, "max": 2, "tooltip": "CLIP-L skip (local encoder)."}),
             },
             "optional": {
-                "te_lora_paths": ("STRING", {"default": ""}),
-                "te_lora_scales_openclip": (
-                    "FLOAT",
-                    {"default": 0.7, "min": 0.0, "max": 1.5},
-                ),
-                "te_lora_scales_clipL": (
-                    "FLOAT",
-                    {"default": 0.6, "min": 0.0, "max": 1.5},
-                ),
-                # Optional SDXL conditioning metadata
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
-                "target_width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
-                "target_height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 64}),
-                "auto_tune_by_resolution": ("BOOL", {"default": True}),
+                "width": ("INT", {"default": 1024, "min": 64, "max": 8192, "tooltip": "Working width for heuristics (feed from SmartLatent)."}),
+                "height": ("INT", {"default": 1024, "min": 64, "max": 8192, "tooltip": "Working height for heuristics (feed from SmartLatent)."}),
             },
         }
 
-    RETURN_TYPES = ("CONDITIONING",)
-    RETURN_NAMES = ("cond",)
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
+    RETURN_NAMES = ("cond_positive", "cond_negative")
     FUNCTION = "encode"
     CATEGORY = "itsjustregi / SDXL Adherence"
 
     def encode(
         self,
         clip,
-        role,
         early_text,
         late_text,
         neg_text,
         essentials_text,
         early_late_mix,
         essentials_lock,
-        token_budget,
         clip_skip_openclip,
         clip_skip_clipL,
-        te_lora_paths="",
-        te_lora_scales_openclip=0.7,
-        te_lora_scales_clipL=0.6,
-        width: int = 1024,
-        height: int = 1024,
-        target_width: int = 1024,
-        target_height: int = 1024,
-        auto_tune_by_resolution: bool = True,
+        width=1024,
+        height=1024,
     ):
-        # negative path
-        if role == "negative":
-            text = neg_text or ""
-            cond = _encode_text(clip, text, clip_skip_openclip, clip_skip_clipL)
-            return (cond,)
 
-        # positive path
-        # Budget early text to token limit; overflow goes to late
-        early_kept, early_over = _truncate_to_tokens(clip, early_text or "", token_budget)
-        late_combined = ", ".join([t for t in [early_over, late_text] if t]).strip(", ")
+        # Heuristic tweaks by resolution (does not alter structure)
+        mix, lock = _res_aware(early_late_mix, essentials_lock, width, height)
 
-        # Resolution-aware auto-tuning of weights (optional)
-        if auto_tune_by_resolution:
-            try:
-                long_side = max(width, height)
-                if long_side > 1280:
-                    early_late_mix = max(early_late_mix, 0.6)
-                    essentials_lock = max(essentials_lock, 0.4)
-                elif long_side < 896:
-                    early_late_mix = min(early_late_mix, 0.3)
-            except Exception:
-                pass
+        # --- POSITIVE ---
+        pos = []
+        # Early (instruction heavy)
+        pos_early = _encode_as_list(clip, early_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+        pos.extend(pos_early)
 
-        def _encode_with_dims(text: str):
-            if not text:
-                return []
-            # Try passing SDXL conditioning dims when supported; fallback to plain encode
-            if hasattr(clip, "encode"):
-                try:
-                    return clip.encode(
-                        text,
-                        clip_skip_g=clip_skip_openclip,
-                        clip_skip_l=clip_skip_clipL,
-                        width=width,
-                        height=height,
-                        target_width=target_width,
-                        target_height=target_height,
-                    )
-                except TypeError:
-                    return _encode_text(clip, text, clip_skip_openclip, clip_skip_clipL)
-            return _encode_text(clip, text, clip_skip_openclip, clip_skip_clipL)
+        # Late (aesthetic) with mix weight
+        if (late_text or "").strip():
+            pos_late = _encode_as_list(clip, late_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+            _blend_append(pos, pos_late, scale=mix)
 
-        cond_early = _encode_with_dims(early_kept)
-        cond_late = _encode_with_dims(late_combined)
-        cond = _blend_conditionings(cond_early, cond_late, early_late_mix)
+        # Essentials lock (hard bias) with lock weight
+        if (essentials_text or "").strip() and lock > 0.0:
+            pos_lock = _encode_as_list(clip, essentials_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+            _blend_append(pos, pos_lock, scale=lock)
 
-        if essentials_text and essentials_lock > 0.0:
-            cond_lock = _encode_text(clip, essentials_text, clip_skip_openclip, clip_skip_clipL)
-            for c in cond_lock:
-                cond.append(
-                    {
-                        "conditioning": c.get("conditioning", c),
-                        "pooled_output": c.get("pooled_output", None),
-                        "weight": essentials_lock,
-                    }
-                )
+        # --- NEGATIVE ---
+        neg = _encode_as_list(clip, neg_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
 
-        # Best-effort TE-LoRA injection (text encoders only)
-        _apply_te_loras(clip, te_lora_paths, te_lora_scales_openclip, te_lora_scales_clipL)
+        # Defensive validation: every entry must have pooled_output
+        for name, lst in (("positive", pos), ("negative", neg)):
+            if not isinstance(lst, list) or len(lst) == 0:
+                raise ValueError(f"{name} conditioning is empty; encode returned 0 entries.")
+            for i, entry in enumerate(lst):
+                if (not isinstance(entry, (list, tuple))) or len(entry) != 2:
+                    raise ValueError(f"{name}[{i}] invalid entry type (must be [cond, meta]).")
+                cond, meta = entry
+                if meta.get("pooled_output", None) is None:
+                    # true fix: never hand KSampler a None pooled_output
+                    if cond.ndim == 3:
+                        meta["pooled_output"] = cond.mean(dim=1)
+                    else:
+                        raise ValueError(
+                            f"{name}[{i}] has no pooled_output and cond shape {tuple(cond.shape)}"
+                        )
+                # normalize weight to float
+                if "weight" in meta:
+                    meta["weight"] = float(meta["weight"])
+                else:
+                    meta["weight"] = 1.0
 
-        return (cond,)
+        return (pos, neg)
