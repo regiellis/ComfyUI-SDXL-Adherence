@@ -89,6 +89,43 @@ Restart ComfyUI.
 
 ---
 
+## Any-size + tiled VAE (what this solves)
+
+SmartLatent accepts any H×W and safely snaps to 64-multiples:
+
+- pad_up: letterbox with reflect/edge/constant (alpha-safe), preserves content
+- downscale_only: fit inside lower 64-multiple, then pad small residuals
+- resize_round: direct resize near the nearest 64 (may change AR)
+- crop_center: centered crop down to the lower 64 (no resize)
+
+When your VAE supports tiled encode/decode, the wrappers pick the right signature automatically and fall back to non-tiled if needed. This lets you push larger sizes on 24 GB GPUs with fewer OOMs.
+
+Outputs include dims_json and bbox_json so you can later align hints 1:1 and crop back after decoding.
+
+---
+
+## Usage diagram
+
+```text
+[CheckpointLoader] -> (model, clip, vae)
+	  |                 |      |
+	  |                 |      v
+	  |                 |  [SmartLatent]
+	  |                 |     └─> (latent, dims_json, bbox_json, W, H)
+	  |                 v
+	  |           [SDXL Prompt Styler]
+	  |                 └─> (early, late, neg, essentials)
+	  v
+  [SDXL Dual CLIP Encode]
+	  └─> (cond_positive, cond_negative)
+
+(cond+, cond-) + (model, latent) -> [KSampler] -> [VAE Decode]
+							└─> (image)
+Optional: [Crop By BBox] with bbox_json -> (image cropped)
+```
+
+---
+
 ## Recommended defaults
 
 - Sampler: DPM++ 2M SDE Karras, 28 steps, CFG 6.0, rescale 0.8, ETA=0
