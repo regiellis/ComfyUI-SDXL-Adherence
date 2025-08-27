@@ -1,38 +1,39 @@
 # SDXL Prompt Styler
 
-Purpose: Protect subject tokens up front, inject style cues, normalize negatives, and optionally tweak phrasing by aspect.
+Helps your prompt “stick” by keeping the subject up front and adding a clean set of style cues. It can also tidy your negatives so they don’t fight the look you want.
 
-## Inputs
+What it does
 
-- prompt (STRING)
-  - Main prompt: subject and key attributes.
-- negative (STRING)
-  - Negative prompt; normalization keeps factual defects and removes noisy style terms.
-- style (PRESET)
-  - One of: none, cinematic, product, portrait, toon.
-- token_budget (INT)
-  - How much to keep up front; encoder enforces 77 tokens.
-- strict_keywords (STRING)
-  - Comma-separated essentials to always preserve.
-- normalize_negatives (BOOLEAN)
-  - When true, adds core defects and drops noisy terms.
-- width, height (STRING, optional)
-  - For aspect-tweaks if dims_json not provided.
-- aspect_tweaks (BOOLEAN)
-  - Adds small phrases for wide/tall compositions.
-- dims_json (STRING)
-  - If connected from SmartLatent, provides W/H for aspect logic.
+- Splits your prompt into: Early (subject) and Late (aesthetic extras)
+- Adds a style preset (cinematic, product, portrait, toon…)
+- Normalizes negative prompt (keeps true defects like “extra fingers”, removes noisy style words)
+- Optionally adds a tiny hint for wide/tall frames
 
-## Outputs
+When to use
 
-- early_text, late_text, neg_text, essentials_text (STRINGs)
+- Before Dual CLIP Encode. The outputs plug straight in.
 
-## How it splits
+What to set (simple)
 
-- Early: subject and key constraints (first 40% by sentence-ish split)
-- Late: aesthetic extras (the rest)
+- prompt: subject and must-haves
+- negative: things to avoid (it will clean this up for you)
+- style: pick a preset (or “none”)
+- normalize_negatives: On (recommended)
+- token_budget: leave at default unless your prompt is very long
 
-## Tips
+Extra knobs (optional)
 
-- Keep prompt focused; let the style preset add most look/feel terms.
-- If late_text gets long, reduce token_budget or trim it manually.
+- strict_keywords: words you absolutely want preserved
+- aspect_tweaks: On to add tiny phrasing based on aspect
+- dims_json: connect from SmartLatent so aspect tweaks are accurate
+
+Quick recipes
+
+- Cinematic portraits: style=cinematic, normalize_negatives=On
+- Clean product shots: style=product, normalize_negatives=On, add essentials later in Dual CLIP
+- Toon look: style=toon, keep the prompt simple
+
+Troubleshooting
+
+- “It’s adding words I don’t like” → switch style to “none”, or trim your prompt after this node
+- “Late text too long” → lower token_budget or tone down phrasing in the original prompt

@@ -1,40 +1,37 @@
 # SDXL Dual CLIP Encode (pos/neg)
 
-Purpose: Build canonical SDXL conditioning lists (positive and negative) using the pooled-output path so SDXL ADM always receives pooled_output.
+Turn your text into SDXL-friendly conditioning. Positive goes in one side, negative in the other, and we make sure SDXL gets everything it needs.
 
-## Inputs
+What it does
 
-- clip (CLIP)
-  - The SDXL dual-encoder CLIP from CheckpointLoader.
-- early_text (STRING)
-  - Instruction-heavy core subject and key attributes. Always included.
-- late_text (STRING)
-  - Aesthetic long-tail descriptors. Blended with early by early_late_mix.
-- neg_text (STRING)
-  - Negative prompt.
-- essentials_text (STRING)
-  - Extra keywords to reinforce with additional weight.
-- early_late_mix (FLOAT)
-  - Blend weight for late_text (0 = ignore late, 1 = equal weight).
-- essentials_lock (FLOAT)
-  - Additional weight applied to essentials_text.
-- clip_skip_openclip (INT)
-  - Skip for global encoder (OpenCLIP). Usually 0 or 1.
-- clip_skip_clipL (INT)
-  - Skip for local encoder (CLIP-L). Usually 0.
-- width, height (INT, optional)
-  - Used by light heuristics: bumps lock for long side >1280, reduces mix on small sizes.
+- Encodes your 4 texts: early, late, essentials (positive) and negative
+- Ensures a special “pooled_output” is always present (prevents SDXL ADM errors)
+- Lets you blend late aesthetics softly with early subject
 
-## Outputs
+When to use
 
-- cond_positive (CONDITIONING): list of [cond, {pooled_output, weight}]
-- cond_negative (CONDITIONING): list of [cond, {pooled_output, weight}]
+- Always, right before KSampler (connect to clip from CheckpointLoader)
 
-## Why pooled_output matters
+What to set (simple)
 
-SDXL’s ADM pathway requires pooled_output present on each conditioning entry. This node uses tokenize -> encode_from_tokens(..., return_pooled=True) to guarantee pooled presence, with fallbacks that synthesize a safe pooled when needed.
+- early_text: your main subject and must-haves
+- late_text: vibe/extra aesthetics (optional)
+- essentials_text: extra keywords to “lock in” (optional)
+- neg_text: things to avoid
+- early_late_mix: how much late_text to blend (start at 0.4)
+- essentials_lock: how strongly to reinforce essentials (start at 0.35)
 
-## Tips
+Quick recipes
 
-- If KSampler feels slower, try setting early_late_mix=0 and essentials_lock=0 to keep a single conditioning entry.
-- Keep late_text short and impactful; verbose late_text increases token work without much gain.
+- Fast: only early_text + neg_text; set early_late_mix=0 and essentials_lock=0 (one conditioning entry, slightly faster sampling)
+- Balanced: early_text + short late_text, early_late_mix≈0.3–0.5, essentials_lock≈0.25–0.45
+- Strong control: add essentials_text (e.g., “red dress, backlighting”) and set essentials_lock≈0.4–0.6
+
+Performance note
+
+- More positive entries (early + late + essentials) can make each sampler step a bit slower. If speed dips, try lowering early_late_mix and/or essentials_lock, or leave late empty.
+
+Troubleshooting
+
+- “ADM pooled_output error” → This node prevents it automatically. If you still see issues, make sure the clip input comes from an SDXL loader.
+- “Not following my style” → Move some terms from late into essentials_text and raise essentials_lock.

@@ -1,29 +1,27 @@
 # Align Hints To Latent
 
-Purpose: Snap ControlNet hint images (canny, depth, lineart, etc.) to exactly match the latent’s W×H so the UNet grid and hints stay in lockstep.
+Make your hint images (canny, depth, lineart…) exactly match the latent size, so ControlNet and the UNet grid stay in sync.
 
-## Inputs
+What it does
 
-- latent (LATENT)
-  - The latent whose W×H defines target size.
-- image (IMAGE)
-  - Hint image (H×W×C or B×H×W×C).
-- snap_mode (pad_up | downscale_only | resize_round | crop_center)
-  - Same semantics as SmartLatent.
-- pad_kind (reflect | edge | constant)
-  - Padding mode for pad_up/downscale-only residuals.
-- pad_value (INT)
-  - Constant pad value for pad_kind=constant.
-- keep_alpha (BOOLEAN)
-  - Preserve alpha if present.
+- Resizes/pads/crops your hint image to the latent’s width/height
+- Returns bbox_json so you can crop back after decoding if you need
 
-## Outputs
+What to set
 
-- image_aligned (IMAGE): B×H×W×C
-- bbox_json (STRING): {x,y,w,h,W,H}
-- width, height (INT)
+- latent: connect from SmartLatent
+- image: your hint image
+- snap_mode: usually pad_up to keep the hint’s composition
+- pad_kind: reflect (nicest) or edge (safest)
+- keep_alpha: On if your hint has an alpha you want to preserve
 
-## Tips
+Outputs
 
-- If ControlNet throws size mismatches, feed dims_json from SmartLatent to ensure your hint node keys off the same W×H.
-- Use pad_up for composition-sensitive hints (like edge maps) to avoid AR changes.
+- image_aligned: exact B×H×W×C to feed ControlNet
+- width/height: the size it produced
+- bbox_json: for crop-back later
+
+Tips
+
+- If ControlNet complains about size, make sure its input is this image_aligned and that dims_json/latent come from the same SmartLatent.
+- For delicate edges/lines, prefer pad_up so you don’t squeeze or stretch.

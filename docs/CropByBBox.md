@@ -1,27 +1,25 @@
 # Crop By BBox
 
-Purpose: After decoding an image that was padded or resized, crop back to original content region using bbox_json produced by SmartLatent or AlignHintsToLatent.
+Remove any padding that was added earlier so your final image is exactly the original content size.
 
-## Inputs
+When to use
 
-- image (IMAGE)
-  - Input image to crop (H×W×C or B×H×W×C).
-- bbox_json (STRING)
-  - {x,y,w,h,W,H} where (W,H) are working dims and (w,h) are content size.
-- resize_back (BOOLEAN)
-  - If true, resizes the cropped region back to content size (w×h).
-- clamp_to_bounds (BOOLEAN)
-  - Keep crop within image bounds.
-- feather (INT)
-  - Soft edge radius in pixels. Useful for compositing.
-- expand (INT)
-  - Grow crop rect by N px in all directions before cropping.
+- After VAE Decode, if you used SmartLatent snap_mode=pad_up or downscale_only
 
-## Outputs
+What to set
 
-- image_cropped (IMAGE)
-- info_json (STRING): includes original/mapped rects and whether resized back.
+- image: the decoded image
+- bbox_json: connect from SmartLatent (or AlignHints if that was your source)
+- resize_back: On to get back to the original content width/height
+- feather: add a soft edge for smoother compositing (optional)
+- expand: grow the crop a little before cutting (optional)
 
-## Tips
+Outputs
 
-- Use after VAE decode when SmartLatent used pad_up or downscale_only. It removes letterboxing so your final output matches original content size.
+- image_cropped: your final image without letterbox padding
+- info_json: details about the crop it applied
+
+Troubleshooting
+
+- “Nothing changes when I crop” → Your snap_mode likely didn’t add padding. That’s fine.
+- “Edges look too sharp” → Increase feather a bit.
