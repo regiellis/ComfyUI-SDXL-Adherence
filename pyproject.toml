@@ -14,9 +14,7 @@ Issues = "https://github.com/regiellis/ComfyUI-SDXL-Adherence/issues"
 [tool.comfy]
 PublisherId = "itsjustregi"
 DisplayName = "ComfyUI SDXL Adherence"
-Icon = "https://raw.githubusercontent.com/regiellis/ComfyUI-SDXL-Adherence/main/icon.png"
-Banner = "https://raw.githubusercontent.com/regiellis/ComfyUI-SDXL-Adherence/main/banner.png"
-requires-comfyui = ">=1.0.0"
+Icon = ""
 
 # Formatting & linting config
 [tool.black]
