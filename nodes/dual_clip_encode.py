@@ -10,6 +10,7 @@ import torch
 
 # --- helpers ---------------------------------------------------------------
 
+
 def _encode_text_tokens(clip, tokens, clip_skip_g: int, clip_skip_l: int):
     """
     Preferred path: returns (cond[B,T,D], pooled[B,D]) with pooled non-None.
@@ -52,9 +53,13 @@ def _cond_entry(cond: torch.Tensor, pooled: torch.Tensor, weight: float = 1.0):
         if cond.ndim == 3:
             pooled = cond.mean(dim=1)
         elif cond.ndim == 2:
-            pooled = torch.zeros((cond.shape[0], cond.shape[1]), device=cond.device, dtype=cond.dtype)
+            pooled = torch.zeros(
+                (cond.shape[0], cond.shape[1]), device=cond.device, dtype=cond.dtype
+            )
         else:
-            raise ValueError(f"Unexpected 'cond' shape {tuple(cond.shape)}; cannot synthesize pooled.")
+            raise ValueError(
+                f"Unexpected 'cond' shape {tuple(cond.shape)}; cannot synthesize pooled."
+            )
 
     # ensure plain float for weight (not a Tensor)
     w = float(weight)
@@ -78,7 +83,9 @@ def _blend_append(dst: list, src: list, scale: float):
         dst.append(_cond_entry(cond, pooled, w))
 
 
-def _encode_as_list(clip, text: str, clip_skip_g: int, clip_skip_l: int, weight: float = 1.0) -> list:
+def _encode_as_list(
+    clip, text: str, clip_skip_g: int, clip_skip_l: int, weight: float = 1.0
+) -> list:
     cond, pooled = _encode_text_string(clip, text or "", clip_skip_g, clip_skip_l)
     return [_cond_entry(cond, pooled, weight)]
 
@@ -86,7 +93,7 @@ def _encode_as_list(clip, text: str, clip_skip_g: int, clip_skip_l: int, weight:
 def _res_aware(mix: float, lock: float, width: int, height: int) -> tuple[float, float]:
     try:
         long_side = max(int(width), int(height))
-    except Exception as err:
+    except Exception:
         return mix, lock
     if long_side > 1280:
         return (max(mix, 0.6), max(lock, 0.4))
@@ -100,23 +107,87 @@ def _res_aware(mix: float, lock: float, width: int, height: int) -> tuple[float,
 
 class SDXLDualClipEncode:
     """Encode positive and negative SDXL conditioning with pooled_output present."""
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "clip": ("CLIP", {"tooltip": "SDXL CLIP from CheckpointLoader (dual encoders)."}),
-                "early_text": ("STRING", {"multiline": True, "tooltip": "Primary prompt (subject, key attributes)."}),
-                "late_text": ("STRING", {"multiline": True, "default": "", "tooltip": "Long-tail aesthetics blended with early by early_late_mix."}),
-                "neg_text": ("STRING", {"multiline": True, "default": "", "tooltip": "Negative prompt."}),
-                "essentials_text": ("STRING", {"multiline": False, "default": "", "tooltip": "Keywords to reinforce with extra weight."}),
-                "early_late_mix": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "tooltip": "Blend weight for late_text (0=ignore late, 1=equal weight)."}),
-                "essentials_lock": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "tooltip": "Additional weight applied to essentials_text."}),
-                "clip_skip_openclip": ("INT", {"default": 1, "min": 0, "max": 2, "tooltip": "OpenCLIP skip (global encoder)."}),
-                "clip_skip_clipL": ("INT", {"default": 0, "min": 0, "max": 2, "tooltip": "CLIP-L skip (local encoder)."}),
+                "early_text": (
+                    "STRING",
+                    {"multiline": True, "tooltip": "Primary prompt (subject, key attributes)."},
+                ),
+                "late_text": (
+                    "STRING",
+                    {
+                        "multiline": True,
+                        "default": "",
+                        "tooltip": "Long-tail aesthetics blended with early by early_late_mix.",
+                    },
+                ),
+                "neg_text": (
+                    "STRING",
+                    {"multiline": True, "default": "", "tooltip": "Negative prompt."},
+                ),
+                "essentials_text": (
+                    "STRING",
+                    {
+                        "multiline": False,
+                        "default": "",
+                        "tooltip": "Keywords to reinforce with extra weight.",
+                    },
+                ),
+                "early_late_mix": (
+                    "FLOAT",
+                    {
+                        "default": 0.4,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "tooltip": "Blend weight for late_text (0=ignore late, 1=equal weight).",
+                    },
+                ),
+                "essentials_lock": (
+                    "FLOAT",
+                    {
+                        "default": 0.35,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "tooltip": "Additional weight applied to essentials_text.",
+                    },
+                ),
+                "clip_skip_openclip": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 0,
+                        "max": 2,
+                        "tooltip": "OpenCLIP skip (global encoder).",
+                    },
+                ),
+                "clip_skip_clipL": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 2, "tooltip": "CLIP-L skip (local encoder)."},
+                ),
             },
             "optional": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 8192, "tooltip": "Working width for heuristics (feed from SmartLatent)."}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 8192, "tooltip": "Working height for heuristics (feed from SmartLatent)."}),
+                "width": (
+                    "INT",
+                    {
+                        "default": 1024,
+                        "min": 64,
+                        "max": 8192,
+                        "tooltip": "Working width for heuristics (feed from SmartLatent).",
+                    },
+                ),
+                "height": (
+                    "INT",
+                    {
+                        "default": 1024,
+                        "min": 64,
+                        "max": 8192,
+                        "tooltip": "Working height for heuristics (feed from SmartLatent).",
+                    },
+                ),
             },
         }
 
@@ -146,17 +217,23 @@ class SDXLDualClipEncode:
         # --- POSITIVE ---
         pos = []
         # Early (instruction heavy)
-        pos_early = _encode_as_list(clip, early_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+        pos_early = _encode_as_list(
+            clip, early_text, clip_skip_openclip, clip_skip_clipL, weight=1.0
+        )
         pos.extend(pos_early)
 
         # Late (aesthetic) with mix weight
         if (late_text or "").strip():
-            pos_late = _encode_as_list(clip, late_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+            pos_late = _encode_as_list(
+                clip, late_text, clip_skip_openclip, clip_skip_clipL, weight=1.0
+            )
             _blend_append(pos, pos_late, scale=mix)
 
         # Essentials lock (hard bias) with lock weight
         if (essentials_text or "").strip() and lock > 0.0:
-            pos_lock = _encode_as_list(clip, essentials_text, clip_skip_openclip, clip_skip_clipL, weight=1.0)
+            pos_lock = _encode_as_list(
+                clip, essentials_text, clip_skip_openclip, clip_skip_clipL, weight=1.0
+            )
             _blend_append(pos, pos_lock, scale=lock)
 
         # --- NEGATIVE ---

@@ -4,61 +4,56 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![GPU](https://img.shields.io/badge/VRAM-24GB-blue)](https://www.nvidia.com/en-us/geforce/graphics-cards/compare/)
 
-Custom nodes to make SDXL prompt-faithful and workflow-friendly on consumer GPUs (RTX 3090, 4090, etc.)
+Custom nodes that make SDXL follow your prompt better and run smoother on single-GPU rigs (3090/4090).
 
-Instead of waiting on every new architecture to trickle down, this pack patches SDXL’s weak spots.
+You don’t need a new model to ship good work. This pack patches SDXL’s weak spots: adherence, negatives, and high-res stability.
 
 ---
 
 ## Why this exists
 
-- Flux and other DiT-style models are exciting — they handle longer prompts and follow instructions more tightly. But today they’re built for enterprise-class cards (48–80 GB). On a single 3090/4090, you’ll hit VRAM walls fast.
-- Ecosystem reality: SDXL still has the LoRAs, ControlNets, adapters, VAEs, and fine-tunes that make it practical.
-- Out of the box, SDXL sometimes struggles with prompt adherence, negatives, and high-res aspect ratios.
+- Flux and other DiT-style models are great, but most are aimed at 48–80 GB cards or cloud inference.
+- SDXL still has the strongest ecosystem (LoRAs, ControlNets, adapters, VAEs, fine-tunes).
+- Out of the box, SDXL can drift from your subject, waste tokens, and choke on odd aspect ratios.
 
-This repo adds a minimal set of nodes that solve those gaps, so you can keep shipping with SDXL on “small-guy” rigs.
-
----
-
-## Nodes included
-
-### 1. SDXL Adherence Prompt Styler 🎨
-
-- Splits your prompt into early vs late chunks
-- Injects style presets (cinematic, product, portrait, toon…)
-- Normalizes negatives: keeps real defects (extra fingers, watermark), drops style terms that would fight your chosen look
-- Can tweak phrasing based on aspect ratio
-
-Why: SDXL burns through tokens fast. This node keeps your subject protected while letting the style do its thing.
+These nodes fix that so you can keep moving fast on a single 24 GB GPU.
 
 ---
 
-### 2. SDXL Dual CLIP Encode (pos/neg) 🔗
+## Quick start (2 minutes)
 
-- Encodes positive + negative in one pass
-- Blends early/late/essentials with proper weights
-- Always returns valid pooled_output (no more NoneType.shape crashes in SDXL ADM)
-- Resolution-aware: bumps essentials lock when long side >1280px
+1. Install in ComfyUI/custom_nodes (see Install below) and restart ComfyUI.
+2. Load an SDXL checkpoint → get model, clip, vae.
+3. Drop in these nodes:
+	- Smart Latent (mode: Empty for new images, or Encode Image for img2img/inpaint)
+	- SDXL Prompt Styler (pick a style; keep “Normalize Negatives” on)
+	- SDXL Dual CLIP Encode (wire the 4 texts from the styler)
+4. KSampler: connect model + latent + cond+/cond-.
+5. VAE Decode (tiled if needed). If you padded at encode, use Crop By BBox at the end.
 
----
-
-### 3. Smart Latent (empty or encode) 📐
-
-- Makes empty latents (fresh gens) or encodes images (img2img/inpaint)
-- Snap-to-64 policies: pad_up (default), downscale_only, resize_round, crop_center
-- Emits width, height, dims_json, and bbox_json for other nodes
+That’s it. Bigger images? Smart Latent snaps sizes to 64 safely and uses tiled VAE automatically when available.
 
 ---
 
-### 4. Align Hints To Latent (helper)
+## Node cheat sheet
 
-- Ensures canny/depth/lineart/etc. are resized/padded to exactly match the latent’s W×H
-- Prevents ControlNet drift and sampler shape errors
+- SDXL Prompt Styler 🎨
+	- Protects subject (early/late split), adds style preset, cleans negs.
+	- Good defaults: style=cinematic/portrait; normalize_negatives=on.
 
-### 5. Crop By BBox (helper)
+- SDXL Dual CLIP Encode 🔗
+	- Encodes pos+neg together. Always provides pooled_output (stable SDXL ADM).
+	- Good defaults: early_late_mix=0.4; essentials_lock=0.35 (auto-bumps if long side >1280).
 
-- After decode, crops padded generations back to original size
-- Supports feathering + resize-back
+- Smart Latent 📐
+	- Makes empty latents or encodes images at any size. Snaps to 64 safely.
+	- Good defaults: snap_mode=pad_up; tile_size=320; keep alpha-safe padding.
+
+- Align Hints To Latent (helper)
+	- Resizes/pads canny/depth/lineart/etc. to exactly match latent W×H.
+
+- Crop By BBox (helper)
+	- After decode, crops padded generations back to the original content.
 
 ---
 
@@ -75,32 +70,18 @@ Restart ComfyUI.
 
 ---
 
-## How to use
-
-1. Load SDXL model with CheckpointLoader → model, clip, vae.
-2. SmartLatent:
-	- mode="empty" → start fresh
-	- mode="encode_image" → img2img/inpaint (handles non-64 dims automatically)
-3. SDXL Adherence Prompt Styler: outputs early_text, late_text, neg_text, essentials_text.
-4. SDXL Dual CLIP Encode: input clip + 4 texts → cond_positive, cond_negative.
-5. KSampler: model + latent + conds.
-6. VAE Decode (tiled if needed).
-7. (Optional) Crop By BBox with bbox_json if you padded at encode.
-
----
-
 ## Any-size + tiled VAE (what this solves)
 
-SmartLatent accepts any H×W and safely snaps to 64-multiples:
+Smart Latent accepts any H×W and safely snaps to 64-multiples:
 
 - pad_up: letterbox with reflect/edge/constant (alpha-safe), preserves content
-- downscale_only: fit inside lower 64-multiple, then pad small residuals
-- resize_round: direct resize near the nearest 64 (may change AR)
+- downscale_only: fit inside lower 64-multiple, then pad the small residuals
+- resize_round: resize near the nearest 64 (may change aspect)
 - crop_center: centered crop down to the lower 64 (no resize)
 
-When your VAE supports tiled encode/decode, the wrappers pick the right signature automatically and fall back to non-tiled if needed. This lets you push larger sizes on 24 GB GPUs with fewer OOMs.
+If your VAE has tiled encode/decode, the wrappers pick the right signature automatically and fall back to non-tiled if needed. This lets you push larger sizes on 24 GB GPUs with fewer OOMs.
 
-Outputs include dims_json and bbox_json so you can later align hints 1:1 and crop back after decoding.
+Outputs include dims_json and bbox_json so you can align hints 1:1 and crop back after decoding.
 
 ---
 
@@ -108,19 +89,19 @@ Outputs include dims_json and bbox_json so you can later align hints 1:1 and cro
 
 ```text
 [CheckpointLoader] -> (model, clip, vae)
-	  |                 |      |
-	  |                 |      v
-	  |                 |  [SmartLatent]
-	  |                 |     └─> (latent, dims_json, bbox_json, W, H)
-	  |                 v
-	  |           [SDXL Prompt Styler]
-	  |                 └─> (early, late, neg, essentials)
-	  v
-  [SDXL Dual CLIP Encode]
-	  └─> (cond_positive, cond_negative)
+	|                 |      |
+	|                 |      v
+	|                 |  [SmartLatent]
+	|                 |     └─> (latent, dims_json, bbox_json, W, H)
+	|                 v
+	|           [SDXL Prompt Styler]
+	|                 └─> (early, late, neg, essentials)
+	v
+[SDXL Dual CLIP Encode]
+	└─> (cond_positive, cond_negative)
 
 (cond+, cond-) + (model, latent) -> [KSampler] -> [VAE Decode]
-							└─> (image)
+																└─> (image)
 Optional: [Crop By BBox] with bbox_json -> (image cropped)
 ```
 
@@ -129,9 +110,27 @@ Optional: [Crop By BBox] with bbox_json -> (image cropped)
 ## Recommended defaults
 
 - Sampler: DPM++ 2M SDE Karras, 28 steps, CFG 6.0, rescale 0.8, ETA=0
-- SmartLatent: snap_mode=pad_up, tile_size=320
-- PromptStyler: normalize_negatives=True, style=cinematic/portrait/etc.
-- DualClipEncode: early_late_mix=0.4, essentials_lock=0.35 (auto-bumps on >1280px)
+- Smart Latent: snap_mode=pad_up, tile_size=320
+- Prompt Styler: normalize_negatives=True, style=cinematic/portrait/etc.
+- Dual CLIP Encode: early_late_mix=0.4, essentials_lock=0.35 (auto-bumps on >1280px)
+
+---
+
+## Speed and VRAM tips
+
+- Prefer pad_up over full-resize to keep detail without extra compute.
+- If you see OOM, lower tile_size (e.g., 320 → 256) or reduce the long side.
+- Keep ControlNet hints aligned via Align Hints To Latent to avoid wasted steps.
+- Avoid stacking many heavy LoRAs at once; mix fewer, stronger ones.
+
+---
+
+## Troubleshooting
+
+- NoneType pooled_output or ADM crash: always run conditioning through SDXL Dual CLIP Encode from this pack.
+- Sampler shape mismatch: ensure hints go through Align Hints To Latent and that latent W×H match the sampler.
+- Washed-out style or broken subject: turn down early_late_mix, bump essentials_lock, or simplify the style.
+- Output size wrong after decode: use Crop By BBox to get back to your original content size.
 
 ---
 
@@ -144,14 +143,7 @@ Flux and other DiT-style models are promising:
 
 But today they’re aimed at bigger GPUs + cloud inference. On consumer cards, you’ll hit VRAM ceilings, and the support ecosystem (LoRAs, ControlNets, adapters) is still catching up.
 
-SDXL already has the tools and community, and with these nodes, it closes the gap on adherence — so you can keep working efficiently on a single 24 GB GPU until newer archs are both hardware-friendly and ecosystem-ready.
-
----
-
-## License
-
-MIT — use it, hack it, ship it.
-Just don’t try to sell it as “secret sauce.”
+SDXL already has the tools and community. With these nodes, it closes much of the adherence gap so you can keep working efficiently on a single 24 GB GPU until newer archs are both hardware-friendly and ecosystem-ready.
 
 ---
 
@@ -162,4 +154,10 @@ Just don’t try to sell it as “secret sauce.”
 - SDXL Prompt Styler: docs/SDXLPromptStyler.md
 - Align Hints To Latent: docs/AlignHintsToLatent.md
 - Crop By BBox: docs/CropByBBox.md
+
+---
+
+## License
+
+MIT — use it, hack it, ship it. Don’t sell it as “secret sauce.”
 

@@ -10,6 +10,7 @@ This version is robust to any input size (tiny/huge/odd ARs/alpha/batches). It:
 - supports batches where all frames share H×W,
 - emits consistent bbox_json + dims_json + width + height.
 """
+
 import json
 import math
 
@@ -65,7 +66,9 @@ def _resize_bhwc(img_bhwc: torch.Tensor, W: int, H: int) -> torch.Tensor:
     return _bchw_to_bhwc(bchw)
 
 
-def _safe_pad_bchw(bchw: torch.Tensor, pad_lrtb: tuple, pad_mode: str, pad_value_float: float) -> torch.Tensor:
+def _safe_pad_bchw(
+    bchw: torch.Tensor, pad_lrtb: tuple, pad_mode: str, pad_value_float: float
+) -> torch.Tensor:
     """Pad BCHW on spatial dims with reflect/replicate/constant, auto-fallback if reflect is illegal.
 
     If alpha present (C>3): pad RGB with requested mode (fallback replicate),
@@ -83,7 +86,12 @@ def _safe_pad_bchw(bchw: torch.Tensor, pad_lrtb: tuple, pad_mode: str, pad_value
             elif pad_mode in ("replicate", "edge"):
                 rgb = F.pad(rgb, (left_pad, right_pad, top_pad, bottom_pad), mode="replicate")
             else:
-                rgb = F.pad(rgb, (left_pad, right_pad, top_pad, bottom_pad), mode="constant", value=pad_value_float)
+                rgb = F.pad(
+                    rgb,
+                    (left_pad, right_pad, top_pad, bottom_pad),
+                    mode="constant",
+                    value=pad_value_float,
+                )
         except RuntimeError:
             # reflect may fail if pad >= size; fallback to replicate
             rgb = F.pad(rgb, (left_pad, right_pad, top_pad, bottom_pad), mode="replicate")
@@ -102,7 +110,12 @@ def _safe_pad_bchw(bchw: torch.Tensor, pad_lrtb: tuple, pad_mode: str, pad_value
             elif pad_mode in ("replicate", "edge"):
                 return F.pad(bchw, (left_pad, right_pad, top_pad, bottom_pad), mode="replicate")
             else:
-                return F.pad(bchw, (left_pad, right_pad, top_pad, bottom_pad), mode="constant", value=pad_value_float)
+                return F.pad(
+                    bchw,
+                    (left_pad, right_pad, top_pad, bottom_pad),
+                    mode="constant",
+                    value=pad_value_float,
+                )
         except RuntimeError:
             # reflect illegal → replicate
             return F.pad(bchw, (left_pad, right_pad, top_pad, bottom_pad), mode="replicate")
@@ -178,7 +191,9 @@ def _safe_dims(width: int, height: int, max_pixels: int) -> tuple[int, int, int]
 
 
 # --- robust VAE tiled helpers -----------------------------------------------
-def vae_encode_smart(vae, img_bhwc, use_tiled: bool = True, tile_size: int = 320, tile_overlap: int = 32):
+def vae_encode_smart(
+    vae, img_bhwc, use_tiled: bool = True, tile_size: int = 320, tile_overlap: int = 32
+):
     """Tries multiple encode_tiled signatures, else falls back to vae.encode(img).
 
     img_bhwc: float BHWC in [0,1]
@@ -215,7 +230,9 @@ def vae_encode_smart(vae, img_bhwc, use_tiled: bool = True, tile_size: int = 320
     return vae.encode(img_bhwc)
 
 
-def vae_decode_smart(vae, latent, use_tiled: bool = True, tile_size: int = 320, tile_overlap: int = 32):
+def vae_decode_smart(
+    vae, latent, use_tiled: bool = True, tile_size: int = 320, tile_overlap: int = 32
+):
     """Tries multiple decode_tiled signatures, else falls back to vae.decode(latent).
 
     latent: {"samples": BCHW}
@@ -249,6 +266,7 @@ def vae_decode_smart(vae, latent, use_tiled: bool = True, tile_size: int = 320, 
 
 class SmartLatent:
     """Build or encode latents with safe 64-multiple snapping and dims metadata."""
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -282,15 +300,26 @@ class SmartLatent:
             "optional": {
                 "snap_mode": (
                     ["pad_up", "downscale_only", "resize_round", "crop_center"],
-                    {"default": "pad_up", "tooltip": "Snap policy for non-64 dims: pad, downscale, resize, or crop."},
+                    {
+                        "default": "pad_up",
+                        "tooltip": "Snap policy for non-64 dims: pad, downscale, resize, or crop.",
+                    },
                 ),
                 "pad_kind": (
                     ["reflect", "edge", "replicate", "constant"],
-                    {"default": "reflect", "tooltip": "Padding type for pad_up/downscale (reflect avoids seams). 'edge' behaves like 'replicate'."},
+                    {
+                        "default": "reflect",
+                        "tooltip": "Padding type for pad_up/downscale (reflect avoids seams). 'edge' behaves like 'replicate'.",
+                    },
                 ),
                 "pad_value": (
                     "INT",
-                    {"default": 128, "min": 0, "max": 255, "tooltip": "Pad value (constant mode only)."},
+                    {
+                        "default": 128,
+                        "min": 0,
+                        "max": 255,
+                        "tooltip": "Pad value (constant mode only).",
+                    },
                 ),
                 "batch": (
                     "INT",
@@ -443,13 +472,13 @@ class SmartLatent:
 
         # Accept HWC/BHWC/BCHW; convert to BHWC for VAE
         img = _to_bhwc(image)
-        B, H0, W0, C = int(img.shape[0]), int(img.shape[1]), int(img.shape[2]), int(img.shape[3])
+        B, H0, W0 = int(img.shape[0]), int(img.shape[1]), int(img.shape[2])
 
         # Optional VRAM guard: pre-limit max long side before snapping
         if max_long_side and max(H0, W0) > max_long_side:
             s = float(max_long_side) / float(max(H0, W0))
             img = _resize_bhwc(img, int(round(W0 * s)), int(round(H0 * s)))
-            B, H0, W0, _ = int(img.shape[0]), int(img.shape[1]), int(img.shape[2]), int(img.shape[3])
+            B, H0, W0 = int(img.shape[0]), int(img.shape[1]), int(img.shape[2])
 
         # Compute working dims + plan
         W, H, op, pad_lrtb = _compute_snap(snap_mode, W0, H0)
@@ -465,7 +494,9 @@ class SmartLatent:
         if op in ("pad", "pad+resize"):
             # pad on BCHW
             bchw = _bhwc_to_bchw(work)
-            pad_mode = pad_kind if pad_kind in ("reflect", "replicate", "edge", "constant") else "reflect"
+            pad_mode = (
+                pad_kind if pad_kind in ("reflect", "replicate", "edge", "constant") else "reflect"
+            )
             work = _bchw_to_bhwc(_safe_pad_bchw(bchw, pad_lrtb, pad_mode, float(pad_value) / 255.0))
 
         if op == "crop":
@@ -475,11 +506,15 @@ class SmartLatent:
             work = work[:, y0 : y0 + H, x0 : x0 + W, :]
 
         # Encode (tiled if supported)
-        latent = vae_encode_smart(vae, work, use_tiled=use_tiled, tile_size=tile_size, tile_overlap=tile_overlap)
+        latent = vae_encode_smart(
+            vae, work, use_tiled=use_tiled, tile_size=tile_size, tile_overlap=tile_overlap
+        )
 
         # Validate latent shape vs working dims
         samples = latent["samples"] if isinstance(latent, dict) and "samples" in latent else latent
-        out_latent = latent if isinstance(latent, dict) and "samples" in latent else {"samples": latent}
+        out_latent = (
+            latent if isinstance(latent, dict) and "samples" in latent else {"samples": latent}
+        )
         _, _, h8, w8 = (
             int(samples.shape[0]),
             int(samples.shape[1]),
@@ -501,7 +536,14 @@ class SmartLatent:
         else:
             x_off, y_off, w_cont, h_cont = 0, 0, W, H
 
-        bbox = {"x": int(x_off), "y": int(y_off), "w": int(w_cont), "h": int(h_cont), "W": int(W), "H": int(H)}
+        bbox = {
+            "x": int(x_off),
+            "y": int(y_off),
+            "w": int(w_cont),
+            "h": int(h_cont),
+            "W": int(W),
+            "H": int(H),
+        }
         info = {
             "mode": "encode_image",
             "op": op,

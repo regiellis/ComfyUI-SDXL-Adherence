@@ -7,19 +7,19 @@ from .prompt_styler import SDXLPromptStyler
 from .smart_latent import SmartLatent
 
 NODE_CLASS_MAPPINGS = {
-	"AlignHintsToLatent": AlignHintsToLatent,
-	"CropByBBox": CropByBBox,
-	"SDXLDualClipEncode": SDXLDualClipEncode,
-	"SDXLPromptStyler": SDXLPromptStyler,
-	"SmartLatent": SmartLatent,
+    "AlignHintsToLatent": AlignHintsToLatent,
+    "CropByBBox": CropByBBox,
+    "SDXLDualClipEncode": SDXLDualClipEncode,
+    "SDXLPromptStyler": SDXLPromptStyler,
+    "SmartLatent": SmartLatent,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-	"AlignHintsToLatent": "Align Hints To Latent",
-	"CropByBBox": "Crop By BBox",
-	"SDXLDualClipEncode": "SDXL Dual CLIP Encode",
-	"SDXLPromptStyler": "SDXL Prompt Styler",
-	"SmartLatent": "Smart Latent",
+    "AlignHintsToLatent": "Align Hints To Latent",
+    "CropByBBox": "Crop By BBox",
+    "SDXLDualClipEncode": "SDXL Dual CLIP Encode",
+    "SDXLPromptStyler": "SDXL Prompt Styler",
+    "SmartLatent": "Smart Latent",
 }
 
 WEB_DIRECTORY = "js"

@@ -3,6 +3,7 @@
 Crop an IMAGE using bbox metadata (e.g., from SmartLatent or AlignHintsToLatent).
 Optionally feather edges and resize back to original content size.
 """
+
 import json
 
 import torch
@@ -23,18 +24,46 @@ def _resize_bhwc(img, W, H):
 
 class CropByBBox:
     """Crop by bbox_json and optionally resize back and feather edges."""
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE", {"tooltip": "Image to crop (H×W×C or B×H×W×C)."}),
-                "bbox_json": ("STRING", {"multiline": False, "tooltip": "BBox JSON: {x,y,w,h,W,H}."}),
+                "bbox_json": (
+                    "STRING",
+                    {"multiline": False, "tooltip": "BBox JSON: {x,y,w,h,W,H}."},
+                ),
             },
             "optional": {
-                "resize_back": ("BOOLEAN", {"default": True, "tooltip": "Resize crop back to original content size w×h."}),
-                "clamp_to_bounds": ("BOOLEAN", {"default": True, "tooltip": "Clamp crop rect to image bounds."}),
-                "feather": ("INT", {"default": 0, "min": 0, "max": 32, "step": 1, "tooltip": "Soft edge radius in pixels."}),
-                "expand": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1, "tooltip": "Grow crop rect by N px in all directions."}),
+                "resize_back": (
+                    "BOOLEAN",
+                    {"default": True, "tooltip": "Resize crop back to original content size w×h."},
+                ),
+                "clamp_to_bounds": (
+                    "BOOLEAN",
+                    {"default": True, "tooltip": "Clamp crop rect to image bounds."},
+                ),
+                "feather": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 32,
+                        "step": 1,
+                        "tooltip": "Soft edge radius in pixels.",
+                    },
+                ),
+                "expand": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 256,
+                        "step": 1,
+                        "tooltip": "Grow crop rect by N px in all directions.",
+                    },
+                ),
             },
         }
 

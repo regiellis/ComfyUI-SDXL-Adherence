@@ -258,6 +258,7 @@ class SDXLPromptStyler:
                 return int(v)
             except Exception:
                 return default
+
         def _to_bool(v, default=False):
             try:
                 # Tensor-like values: prefer scalar .item(); else truthy if numel()>0
@@ -273,6 +274,7 @@ class SDXLPromptStyler:
                 return bool(v)
             except Exception:
                 return default
+
         width = _to_int(width, 1024)
         height = _to_int(height, 1024)
         normalize_negatives = _to_bool(normalize_negatives, True)

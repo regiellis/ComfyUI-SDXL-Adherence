@@ -4,6 +4,7 @@ Snap hint images (canny/depth/lineart/etc.) to the latent's exact W×H with
 padding, downscale, resize, or crop, keeping hints 1:1 with the UNet grid.
 Emits bbox metadata to optionally crop back later.
 """
+
 import json
 
 import torch.nn.functional as F
@@ -51,18 +52,42 @@ def _resize(img, W, H):
 
 class AlignHintsToLatent:
     """Align a hint IMAGE to the latent's working dimensions (64-multiple safe)."""
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "latent": ("LATENT", {"tooltip": "Latent whose W×H defines the target size."}),
                 "image": ("IMAGE", {"tooltip": "Hint image to align (B×H×W×C or H×W×C)."}),
-                "snap_mode": (["pad_up", "downscale_only", "resize_round", "crop_center"], {"default": "pad_up", "tooltip": "How to match the latent size: pad, downscale, resize, or crop."}),
-                "pad_kind": (["reflect", "edge", "constant"], {"default": "reflect", "tooltip": "Padding mode for pad-up/downscale residual."}),
+                "snap_mode": (
+                    ["pad_up", "downscale_only", "resize_round", "crop_center"],
+                    {
+                        "default": "pad_up",
+                        "tooltip": "How to match the latent size: pad, downscale, resize, or crop.",
+                    },
+                ),
+                "pad_kind": (
+                    ["reflect", "edge", "constant"],
+                    {
+                        "default": "reflect",
+                        "tooltip": "Padding mode for pad-up/downscale residual.",
+                    },
+                ),
             },
             "optional": {
-                "pad_value": ("INT", {"default": 128, "min": 0, "max": 255, "tooltip": "Constant pad value (0..255)."}),
-                "keep_alpha": ("BOOLEAN", {"default": False, "tooltip": "Preserve alpha channel if present."}),
+                "pad_value": (
+                    "INT",
+                    {
+                        "default": 128,
+                        "min": 0,
+                        "max": 255,
+                        "tooltip": "Constant pad value (0..255).",
+                    },
+                ),
+                "keep_alpha": (
+                    "BOOLEAN",
+                    {"default": False, "tooltip": "Preserve alpha channel if present."},
+                ),
             },
         }
 
