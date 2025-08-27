@@ -1,4 +1,4 @@
-# ComfyUI-SDXL-Adherence ⚡
+# SDXL Adherence ⚡
 
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom_Node-00bcd4?logo=pytorch)](https://github.com/comfyanonymous/ComfyUI)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
