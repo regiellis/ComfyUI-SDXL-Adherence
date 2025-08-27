@@ -1,7 +1,7 @@
 # pyproject.toml
 [project]
 name = "sdxl-adherence"
-version = "1.0.0"
+version = "1.0.1"
 description = "ComfyUI nodes that improve SDXL prompt adherence and any-size/tiled VAE workflows."
 authors = [{ name = "Regi Ellis" }]
 license = { file = "LICENSE" }
