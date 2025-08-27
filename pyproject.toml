@@ -1,19 +1,23 @@
-# pyproject.tom
+# pyproject.toml
 [project]
 name = "ComfyUI_SDXL_Adherence"
-authors = ["Regi Ellis"]
-description = ""
 version = "1.0.0"
+description = "ComfyUI nodes that improve SDXL prompt adherence and any-size/tiled VAE workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Regi Ellis" }]
+license = { file = "LICENSE" }
+dependencies = []
 
-license = {text = ""}
-dependencies  = [""]
 [project.urls]
-Repository = ""
+Homepage = "https://github.com/regiellis/ComfyUI-SDXL-Adherence"
+Repository = "https://github.com/regiellis/ComfyUI-SDXL-Adherence.git"
+Issues = "https://github.com/regiellis/ComfyUI-SDXL-Adherence/issues"
 
 [tool.comfy]
-PublisherId = ""
-DisplayName = ""
-Icon = ""
+PublisherId = "itsjustregi"
+DisplayName = "ComfyUI SDXL Adherence"
+Icon = "" 
 
 # Formatting & linting config
 [tool.black]
