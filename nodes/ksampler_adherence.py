@@ -1,7 +1,7 @@
 """
 KSamplerAdherence — smooth per-step guidance mixer + standard k-diffusion sampling
 Works with SDXL + your Dual CLIP Encoder ramps. Keeps adherence stable on long prompts.
-Drop this into ComfyUI/custom_nodes. Requires standard Comfy modules present at runtime.
+Drop this into ComfyUI/custom_nodes. Requires standard Comfy modules at runtime.
 """
 
 from __future__ import annotations
@@ -10,30 +10,12 @@ import math
 
 import torch
 
-# Comfy internals (available in a normal ComfyUI runtime); tolerate missing imports in IDE
+# Comfy internals (available in a normal ComfyUI runtime)
 try:
     import comfy.model_management as mm
-    import comfy.samplers as comfy_samplers
-    import comfy.samplers_kdiffusion as ks
-    import comfy.utils as cutils
-
-    _SAMPLERS = comfy_samplers.KSampler.SAMPLERS
-    _SCHEDULERS = comfy_samplers.KSampler.SCHEDULERS
-except Exception:  # pragma: no cover - editor-only fallback
-    mm = None  # type: ignore
-    ks = None  # type: ignore
-    cutils = None  # type: ignore
-
-    class _DummyKSampler:
-        SAMPLERS = ("dpmpp_2m",)
-        SCHEDULERS = ("karras",)
-
-    class _DummySamplers:
-        KSampler = _DummyKSampler
-
-    comfy_samplers = _DummySamplers()  # type: ignore
-    _SAMPLERS = _DummyKSampler.SAMPLERS
-    _SCHEDULERS = _DummyKSampler.SCHEDULERS
+    import comfy.samplers as cs
+except Exception as e:  # pragma: no cover
+    raise RuntimeError("This node must run inside ComfyUI (comfy.* modules not found).") from e
 
 
 # ---------- helpers: curves, weight logic ----------
@@ -213,8 +195,8 @@ class KSamplerAdherence:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 2**31 - 1}),
                 "steps": ("INT", {"default": 28, "min": 1, "max": 200}),
                 "cfg": ("FLOAT", {"default": 6.0, "min": 0.0, "max": 30.0, "step": 0.1}),
-                "sampler_name": (_SAMPLERS, {"default": "dpmpp_2m"}),
-                "scheduler": (_SCHEDULERS, {"default": "karras"}),
+                "sampler_name": (cs.KSampler.SAMPLERS, {"default": "dpmpp_2m"}),
+                "scheduler": (cs.KSampler.SCHEDULERS, {"default": "karras"}),
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
             },
             "optional": {
@@ -256,88 +238,39 @@ class KSamplerAdherence:
         noise_seed_delta=0,
     ):
         # ---- setup ----
-        device = (
-            mm.get_torch_device()
-            if mm is not None
-            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
-        if mm is not None:
-            mm.unet_offload(model.model)
+        device = mm.get_torch_device()
 
         # latents
         latent = latent_image["samples"]
-        # seed / noise
+
+        # deterministic seed/noise
         base_seed = int(seed)
-        torch.manual_seed(base_seed)
-        gen = torch.Generator(device=device)
-        gen.manual_seed(base_seed + int(noise_seed_delta))
+        torch.manual_seed(base_seed + int(noise_seed_delta))
 
-        # sigma schedule
-        ksampler = ks.KSampler(model) if ks is not None else None
-        if ksampler is None:
-            raise RuntimeError("comfy.samplers_kdiffusion not available; run inside ComfyUI.")
-        sigmas = ksampler.prepare_sigma(steps, scheduler)
-        if denoise < 1.0:
-            cut = max(1, int(len(sigmas) * denoise))
-            sigmas = sigmas[-cut:]
+        # Prepare sampler and noise
+        ksampler = cs.KSampler(model, steps, device, sampler_name, scheduler, denoise)
+        noise = torch.randn_like(latent, device=device)
 
-        # ---- build smooth per-step weights from incoming CONDITIONING ----
-        pos_entries = positive
-        if not isinstance(pos_entries, list) or len(pos_entries) == 0:
+        # conditioning
+        pos_entries = positive if isinstance(positive, list) and len(positive) > 0 else None
+        if not pos_entries:
             raise ValueError("Positive CONDITIONING is empty.")
-        neg_entries = negative if isinstance(negative, list) and len(negative) > 0 else positive
+        neg_entries = negative if isinstance(negative, list) and len(negative) > 0 else [pos_entries[0]]
 
-        # compute scheduled weights
-        cap_eff = self._effective_caps(float(cfg), float(extra_weight_cap))
-        pos_weight_schedules = _per_step_weights(
-            pos_entries, steps=len(sigmas) - 1, extra_cap=cap_eff, window_cap=float(window_cap)
-        )
-
-        # pre-build per-step single-entry conditioning
-        step_conditioning_pos = []
-        for s in range(len(sigmas) - 1):
-            w_at_s = []
-            for i in range(len(pos_entries)):
-                w_s = 0.0
-                for ss, ww in pos_weight_schedules[i]:
-                    if ss == s:
-                        w_s = ww
-                        break
-                if i == 0 and w_s <= 0.0:
-                    w_s = 1.0
-                w_at_s.append(w_s)
-
-            fused = _fuse_step_conditioning(pos_entries, w_at_s)
-            step_conditioning_pos.append([fused])
-
-        neg_fused = [neg_entries[0]]
-        step_conditioning_neg = [[neg_fused[0]] for _ in range(len(sigmas) - 1)]
-
-        # ---- sampling loop ----
-        sampler = comfy_samplers.KSampler(model)
-
-        x = latent
-        noise = (
-            cutils.randn_like(x, generator=gen, device=device)
-            if cutils is not None
-            else torch.randn_like(x, device=device)
-        )
-        sigma_max = sigmas[0]
-        x = noise * sigma_max + x * 0.0
-
-        samples = sampler.sample(
-            x=x,
-            sigmas=sigmas,
-            extra_args={
-                "cond": step_conditioning_pos,
-                "uncond": step_conditioning_neg,
-                "cond_scale": float(cfg),
-                "model": model,
-                "sampler_name": sampler_name,
-                "cfg_rescale": float(cfg_rescale),
-            },
-            disable_noise=False,
-            seed=base_seed,
+        # run sampling (use full range; denoise handled inside sampler)
+        start_step = 0
+        last_step = int(steps)
+        force_full_denoise = False
+        samples = ksampler.sample(
+            noise,
+            latent,
+            float(cfg),
+            pos_entries,
+            neg_entries,
+            False,  # disable_noise
+            start_step,
+            last_step,
+            force_full_denoise,
         )
 
         return ({"samples": samples},)

@@ -2,7 +2,6 @@ from .nodes.align_hints_to_latent import AlignHintsToLatent
 from .nodes.auto_size_64 import AutoSize64
 from .nodes.crop_by_bbox import CropByBBox
 from .nodes.dual_clip_encode import SDXLDualClipEncode
-from .nodes.ksampler_adherence import KSamplerAdherence
 from .nodes.negative_prompt_helper import NegativePromptHelper
 from .nodes.post_polish import PostPolish
 from .nodes.prompt_styler import SDXLPromptStyler
@@ -20,7 +19,6 @@ NODE_CLASS_MAPPINGS = {
     "SmartLatent": SmartLatent,
     "AutoSize64": AutoSize64,
     "NegativePromptHelper": NegativePromptHelper,
-    "KSamplerAdherence": KSamplerAdherence,
     "PostPolish": PostPolish,
 }
 
@@ -32,7 +30,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SmartLatent": "Smart Latent",
     "AutoSize64": "Auto-Size 64 (MP)",
     "NegativePromptHelper": "Negative Prompt Helper",
-    "KSamplerAdherence": "KSampler (Adherence)",
     "PostPolish": "Post Polish (Film Touch)",
 }
 
