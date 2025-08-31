@@ -37,7 +37,10 @@ class PostPolish:
                 "image": ("IMAGE", {}),
                 "film_touch": ("BOOLEAN", {"default": True}),
                 "tone_strength": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 0.5, "step": 0.01}),
-                "grain_strength": ("FLOAT", {"default": 0.02, "min": 0.0, "max": 0.2, "step": 0.005}),
+                "grain_strength": (
+                    "FLOAT",
+                    {"default": 0.02, "min": 0.0, "max": 0.2, "step": 0.005},
+                ),
             }
         }
 

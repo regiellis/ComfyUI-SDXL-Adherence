@@ -6,7 +6,6 @@ UI: toggle Realism Negs (on/off), optional custom pack string to extend.
 
 import re
 
-
 REALISM_NEGS = [
     "cartoon",
     "illustration",
