@@ -24,7 +24,8 @@ Recommended settings
 What to set (only the useful ones)
 
 - mode: empty for fresh images; encode_image for img2img/inpaint
-- width/height: your target size (the node will adjust as needed)
+- resolution: quick presets with aspect ratios; selecting one overrides width/height in empty mode
+- width/height: your target size (the node will adjust as needed); used when resolution is "Use width/height"
 - snap_mode:
   - pad_up: preserve composition (default)
   - downscale_only: fit inside the lower 64-multiple, then tiny pads

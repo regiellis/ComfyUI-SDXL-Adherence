@@ -515,7 +515,12 @@ class SDXLPromptStyler:
                 pass
 
         # 2) budgeting: favor early info, move long-tail aesthetics to late
-        parts = [p.strip() for p in re.split(r"[.;\n]+", styled) if p.strip()]
+        # Split on semicolons/newlines (and sentence-ending periods that are NOT decimals)
+        parts = [
+            p.strip()
+            for p in re.split(r"(?<!\d)\.(?!\d)|[;\n]+", styled)
+            if p.strip()
+        ]
         if not parts:
             parts = [styled]
         # auto pivot based on approximate token load vs budget
@@ -534,6 +539,17 @@ class SDXLPromptStyler:
         pivot = max(1, int(len(parts) * ratio))
         early_text = ", ".join(parts[:pivot])
         late_text = ", ".join(parts[pivot:]) if len(parts) > pivot else ""
+
+        # Light cleanup: collapse duplicate commas/spaces without touching weight syntax
+        def _clean_commas(s: str) -> str:
+            if not s:
+                return s
+            s = re.sub(r"\s*,\s*", ", ", s)   # normalize comma spacing
+            s = re.sub(r"(?:,\s*){2,}", ", ", s)  # collapse duplicate commas
+            return s.strip(" ,")
+
+        early_text = _clean_commas(early_text)
+        late_text = _clean_commas(late_text)
 
         # 3) essentials from strict or auto
         strict_list = _split_keywords(strict_keywords)

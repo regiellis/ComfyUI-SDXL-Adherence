@@ -13,6 +13,7 @@ This version is robust to any input size (tiny/huge/odd ARs/alpha/batches). It:
 
 import json
 import math
+import re
 
 import torch
 import torch.nn.functional as F
@@ -298,6 +299,26 @@ class SmartLatent:
                 ),
             },
             "optional": {
+                "resolution": (
+                    [
+                        "Use width/height",
+                        "1024x1024 (1:1)",
+                        "1216x832 (19:13)",
+                        "832x1216 (13:19)",
+                        "1344x768 (7:4)",
+                        "768x1344 (4:7)",
+                        "1536x640 (12:5)",
+                        "640x1536 (5:12)",
+                        "1152x896 (9:7)",
+                        "896x1152 (7:9)",
+                        "1408x704 (2:1)",
+                        "704x1408 (1:2)",
+                    ],
+                    {
+                        "default": "Use width/height",
+                        "tooltip": "Quick presets; selecting one overrides width/height (empty mode).",
+                    },
+                ),
                 "snap_mode": (
                     ["pad_up", "downscale_only", "resize_round", "crop_center"],
                     {
@@ -394,6 +415,7 @@ class SmartLatent:
         mode,
         width,
         height,
+        resolution="Use width/height",
         batch=1,
         image=None,
         tile_size=320,
@@ -438,6 +460,17 @@ class SmartLatent:
         # Coerce inputs
         width = _to_int(width, 1024)
         height = _to_int(height, 1024)
+        # If a resolution preset was chosen, override width/height
+        try:
+            res_str = str(resolution or "Use width/height")
+            if res_str and res_str != "Use width/height":
+                m = re.search(r"(\d{2,5})\s*[x×]\s*(\d{2,5})", res_str, flags=re.IGNORECASE)
+                if m:
+                    width = _to_int(m.group(1), width)
+                    height = _to_int(m.group(2), height)
+        except Exception:
+            # ignore bad preset strings
+            pass
         batch = _to_int(batch, 1)
         tile_size = _to_int(tile_size, 320)
         tile_overlap = _to_int(tile_overlap, 32)
