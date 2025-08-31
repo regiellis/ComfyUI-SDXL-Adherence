@@ -39,7 +39,9 @@ That’s it. Bigger images? Smart Latent snaps sizes to 64 safely and uses tiled
 
 - SDXL Prompt Styler 🎨
 	- Protects subject (early/late split), adds style preset, cleans negs.
-	- Good defaults: style=cinematic/portrait; normalize_negatives=on.
+	- Essentials automation: strategy controls (off/conservative/balanced/aggressive), allow/block lists, and max_essentials cap.
+	- Auto pivot for early/late based on prompt length; manual early_ratio available.
+	- Good defaults: style=cinematic/portrait; normalize_negatives=on; essentials_strategy=balanced.
 
 - SDXL Dual CLIP Encode 🔗
 	- Encodes pos+neg together. Always provides pooled_output (stable SDXL ADM).
@@ -47,6 +49,7 @@ That’s it. Bigger images? Smart Latent snaps sizes to 64 safely and uses tiled
 
 - Smart Latent 📐
 	- Makes empty latents or encodes images at any size. Snaps to 64 safely.
+	- Resolution presets dropdown with aspect ratios; selecting a preset overrides width/height (empty mode).
 	- Good defaults: snap_mode=pad_up; tile_size=320; keep alpha-safe padding.
 
 - Align Hints To Latent (helper)
@@ -101,7 +104,7 @@ Outputs include dims_json and bbox_json so you can align hints 1:1 and crop back
 	└─> (cond_positive, cond_negative)
 
 (cond+, cond-) + (model, latent) -> [KSampler] -> [VAE Decode]
-																└─> (image)
+											└─> (image)
 Optional: [Crop By BBox] with bbox_json -> (image cropped)
 ```
 

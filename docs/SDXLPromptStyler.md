@@ -24,6 +24,10 @@ What to set (simple)
 Extra knobs (optional)
 
 - strict_keywords: words you absolutely want preserved
+- essentials_strategy: off/conservative/balanced/aggressive (how essentials are auto-picked)
+- noise_blocklist / noise_allowlist: exclude or force-include terms in essentials
+- max_essentials: cap the number of auto essentials
+- auto_pivot + early_ratio: adapt or control how much stays in Early
 - aspect_tweaks: On to add tiny phrasing based on aspect
 - dims_json: connect from SmartLatent so aspect tweaks are accurate
 
