@@ -223,7 +223,7 @@ def _pick_essentials(
     s_clean = re.sub(r":\s*\d+(?:\.\d+)?", "", s)
     keep: list[str] = []
     seen: set[str] = set()
-    blockset = set((blocklist or []))
+    blockset = set(blocklist or [])
 
     def _add(x: str):
         x = (x or "").strip().strip(",")
@@ -293,7 +293,7 @@ def _pick_essentials(
         _add(tok)
 
     # Allowlist (force include)
-    for t in (allowlist or []):
+    for t in allowlist or []:
         _add(t)
 
     # Cap length to avoid bloating the essentials channel
@@ -509,9 +509,9 @@ class SDXLPromptStyler:
         dims_json: str = "",
         auto_essentials: bool = True,
         max_essentials: int = 24,
-    essentials_strategy: str = "balanced",
-    noise_blocklist: str = "",
-    noise_allowlist: str = "",
+        essentials_strategy: str = "balanced",
+        noise_blocklist: str = "",
+        noise_allowlist: str = "",
         auto_pivot: bool = True,
         early_ratio: float = 0.4,
     ):
