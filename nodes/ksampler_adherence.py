@@ -7,7 +7,6 @@ Drop this into ComfyUI/custom_nodes. Requires standard Comfy modules present at 
 from __future__ import annotations
 
 import math
-from typing import List, Tuple  # backward-compat; replaced by builtins below
 
 import torch
 
@@ -17,6 +16,7 @@ try:
     import comfy.samplers as comfy_samplers
     import comfy.samplers_kdiffusion as ks
     import comfy.utils as cutils
+
     _SAMPLERS = comfy_samplers.KSampler.SAMPLERS
     _SCHEDULERS = comfy_samplers.KSampler.SCHEDULERS
 except Exception:  # pragma: no cover - editor-only fallback
@@ -111,7 +111,7 @@ def _per_step_weights(
         idxs: list[tuple[int, float]] = []
         for i in range(1, N):  # skip core
             w = 0.0
-            for (ss, ww) in weights[i]:
+            for ss, ww in weights[i]:
                 if ss == s:
                     w = ww
                     break
@@ -122,7 +122,7 @@ def _per_step_weights(
         if extras_here > window_cap and idxs:
             scale = window_cap / max(1e-6, extras_here)
             new_extras_here = 0.0
-            for (i, w) in idxs:
+            for i, w in idxs:
                 for k, (ss, _ww) in enumerate(weights[i]):
                     if ss == s:
                         new_w = w * scale
@@ -162,7 +162,7 @@ def _fuse_step_conditioning(entries: list, weights_at_step: list[float]):
     pooled_acc = None
     wsum = 0.0
 
-    for (entry, w) in zip(entries, weights_at_step):
+    for entry, w in zip(entries, weights_at_step):
         if w <= 0.0:
             continue
         cond, meta = entry
@@ -180,7 +180,10 @@ def _fuse_step_conditioning(entries: list, weights_at_step: list[float]):
 
     if wsum <= 0.0:
         # degenerate: fallback to core entry
-        return [entries[0][0], {"pooled_output": entries[0][1].get("pooled_output", None), "weight": 1.0}]
+        return [
+            entries[0][0],
+            {"pooled_output": entries[0][1].get("pooled_output", None), "weight": 1.0},
+        ]
 
     cond_blend = cond_acc / wsum
     pooled_blend = None if pooled_acc is None else pooled_acc / wsum
@@ -216,7 +219,10 @@ class KSamplerAdherence:
             },
             "optional": {
                 # adherence control (sensible defaults)
-                "extra_weight_cap": ("FLOAT", {"default": 0.24, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "extra_weight_cap": (
+                    "FLOAT",
+                    {"default": 0.24, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
                 "window_cap": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "cfg_rescale": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "noise_seed_delta": ("INT", {"default": 0, "min": -10_000_000, "max": 10_000_000}),
@@ -250,7 +256,11 @@ class KSamplerAdherence:
         noise_seed_delta=0,
     ):
         # ---- setup ----
-        device = mm.get_torch_device() if mm is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = (
+            mm.get_torch_device()
+            if mm is not None
+            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
         if mm is not None:
             mm.unet_offload(model.model)
 
@@ -289,7 +299,7 @@ class KSamplerAdherence:
             w_at_s = []
             for i in range(len(pos_entries)):
                 w_s = 0.0
-                for (ss, ww) in pos_weight_schedules[i]:
+                for ss, ww in pos_weight_schedules[i]:
                     if ss == s:
                         w_s = ww
                         break

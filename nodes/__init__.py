@@ -4,8 +4,8 @@ from .align_hints_to_latent import AlignHintsToLatent
 from .auto_size_64 import AutoSize64
 from .crop_by_bbox import CropByBBox
 from .dual_clip_encode import SDXLDualClipEncode
-from .negative_prompt_helper import NegativePromptHelper
 from .ksampler_adherence import KSamplerAdherence
+from .negative_prompt_helper import NegativePromptHelper
 from .post_polish import PostPolish
 from .prompt_styler import SDXLPromptStyler
 from .smart_latent import SmartLatent
