@@ -38,6 +38,120 @@ STYLE_PRESETS = {
 }
 
 
+# Lightweight lexicons for essentials extraction (no heavy NLP deps)
+COLORS = {
+    "red",
+    "blue",
+    "green",
+    "black",
+    "white",
+    "yellow",
+    "pink",
+    "purple",
+    "orange",
+    "brown",
+    "silver",
+    "gold",
+    "cyan",
+    "magenta",
+    "teal",
+    "turquoise",
+    "beige",
+    "ivory",
+    "gray",
+    "grey",
+    "maroon",
+    "navy",
+    "olive",
+    "lime",
+    "indigo",
+    "violet",
+    "cream",
+    "bronze",
+    "copper",
+    "rose",
+    "peach",
+}
+
+MATERIALS = {
+    "wood",
+    "metal",
+    "steel",
+    "iron",
+    "bronze",
+    "copper",
+    "plastic",
+    "glass",
+    "ceramic",
+    "stone",
+    "marble",
+    "leather",
+    "fabric",
+    "cloth",
+    "silk",
+    "cotton",
+    "wool",
+    "denim",
+    "latex",
+    "rubber",
+    "paper",
+    "concrete",
+    "chrome",
+    "matte",
+    "glossy",
+    "satin",
+    "velvet",
+}
+
+STYLE_NOISE = {
+    # Common aesthetic/style words we don't want to lock as essentials
+    "cinematic",
+    "filmic",
+    "bokeh",
+    "contrast",
+    "lighting",
+    "studio",
+    "composition",
+    "hdr",
+    "award-winning",
+    "microcontrast",
+    "toon",
+    "cel-shaded",
+    "graphic",
+    "style",
+    "rim",
+    "light",
+    "shallow",
+    "portrait",
+    "product",
+    "background",
+}
+
+STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "of",
+    "in",
+    "on",
+    "at",
+    "for",
+    "with",
+    "by",
+    "to",
+    "from",
+    "into",
+    "over",
+    "under",
+    "about",
+    "as",
+    "is",
+    "are",
+}
+
+
 def _split_keywords(s: str) -> list[str]:
     return [w.strip() for w in re.split(r"[,\n;]+", s) if w.strip()]
 
@@ -71,31 +185,84 @@ def _ensure_text(x) -> str:
 
 
 def _pick_essentials(prompt: str, strict: list[str]) -> str:
-    # crude essentials extractor: keep strict + obvious colors/numbers
+    """Extract a compact, order-preserving essentials string from the prompt.
+
+    Heuristics (no heavy NLP):
+    - If user provided strict keywords, use those as-is.
+    - Include quoted phrases ("..." or '...') verbatim.
+    - Prefer subject words before common prepositions (with/in/on/at/of/etc.).
+    - Keep hyphenated compounds.
+    - Keep numbers, ratios (16:9), and units (e.g., 35mm, 4k).
+    - Keep colors and materials.
+    - Keep proper nouns (Simple: consecutive Capitalized tokens), but drop style noise.
+    - Deduplicate case-insensitively and cap length.
+    """
     if strict:
-        return ", ".join(strict)
-    keep = []
-    for tok in re.split(r"[^\w\-]+", prompt):
-        if not tok:
+        return ", ".join([s for s in strict if s])
+
+    s = (prompt or "").strip()
+    keep: list[str] = []
+    seen: set[str] = set()
+
+    def _add(x: str):
+        x = (x or "").strip().strip(",")
+        if not x:
+            return
+        k = x.lower()
+        if k in seen:
+            return
+        seen.add(k)
+        keep.append(x)
+
+    # 1) Quoted phrases
+    for m in re.finditer(r'"([^"]+)"|\'([^\']+)\'', s):
+        phrase = m.group(1) or m.group(2)
+        if phrase:
+            _add(phrase)
+
+    # 2) Subject chunk: before first common preposition/connector
+    subject_chunk = re.split(
+        r"\b(with|featuring|wearing|holding|using|in|on|at|of|and)\b",
+        s,
+        maxsplit=1,
+    )[0]
+    for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-_/]*", subject_chunk):
+        tl = tok.lower()
+        if tl in STOPWORDS or tl in STYLE_NOISE:
             continue
-        if re.match(r"^\d+$", tok):
-            keep.append(tok)
-        elif tok.lower() in {
-            "red",
-            "blue",
-            "green",
-            "black",
-            "white",
-            "yellow",
-            "pink",
-            "purple",
-            "orange",
-            "brown",
-            "silver",
-            "gold",
-        }:
-            keep.append(tok)
-    return ", ".join(keep[:16])
+        if len(tl) <= 1:
+            continue
+        _add(tok)
+
+    # 3) Hyphenated compounds anywhere
+    for tok in re.findall(r"\b[\w]+(?:-[\w]+)+\b", s):
+        if tok.lower() not in STYLE_NOISE:
+            _add(tok)
+
+    # 4) Numbers, ratios, and units
+    for tok in re.findall(r"\b\d+(?:\.\d+)?\b(?:\s?(?:mm|cm|k|m|mp|fps))?", s, flags=re.I):
+        _add(tok)
+    for tok in re.findall(r"\b\d+\s*[:xX]\s*\d+\b", s):
+        _add(tok.replace(" ", ""))
+
+    # 5) Colors and materials
+    for tok in re.findall(r"[A-Za-z]+", s):
+        tl = tok.lower()
+        if tl in COLORS or tl in MATERIALS:
+            _add(tl)
+
+    # 6) Proper nouns (allow 1–3 capitalized tokens)
+    for tok in re.findall(r"\b(?:[A-Z][a-z0-9]+)(?:\s+[A-Z][a-z0-9]+){0,2}\b", s):
+        if tok.isupper():
+            continue  # avoid acronyms screaming
+        if tok.lower() in STYLE_NOISE:
+            continue
+        _add(tok)
+
+    # Cap length to avoid bloating the essentials channel
+    if len(keep) > 24:
+        keep = keep[:24]
+    return ", ".join(keep)
 
 
 def _apply_style(prompt: str, style: str) -> str:
