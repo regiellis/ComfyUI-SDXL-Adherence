@@ -184,7 +184,7 @@ def _ensure_text(x) -> str:
         return ""
 
 
-def _pick_essentials(prompt: str, strict: list[str]) -> str:
+def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
     """Extract a compact, order-preserving essentials string from the prompt.
 
     Heuristics (no heavy NLP):
@@ -260,8 +260,8 @@ def _pick_essentials(prompt: str, strict: list[str]) -> str:
         _add(tok)
 
     # Cap length to avoid bloating the essentials channel
-    if len(keep) > 24:
-        keep = keep[:24]
+    if len(keep) > max_out:
+        keep = keep[:max_out]
     return ", ".join(keep)
 
 
@@ -392,6 +392,41 @@ class SDXLPromptStyler:
                         "tooltip": "Connect SmartLatent.dims_json to auto-use W/H.",
                     },
                 ),
+                # Automation controls
+                "auto_essentials": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Generate essentials automatically when strict keywords are empty.",
+                    },
+                ),
+                "max_essentials": (
+                    "INT",
+                    {
+                        "default": 24,
+                        "min": 4,
+                        "max": 64,
+                        "step": 1,
+                        "tooltip": "Maximum items to include in essentials.",
+                    },
+                ),
+                "auto_pivot": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Auto-adjust early/late split based on prompt length vs token_budget.",
+                    },
+                ),
+                "early_ratio": (
+                    "FLOAT",
+                    {
+                        "default": 0.4,
+                        "min": 0.2,
+                        "max": 0.8,
+                        "step": 0.05,
+                        "tooltip": "Manual early split ratio when auto_pivot is off.",
+                    },
+                ),
             },
         }
 
@@ -412,6 +447,10 @@ class SDXLPromptStyler:
         height=1024,
         aspect_tweaks: bool = False,
         dims_json: str = "",
+    auto_essentials: bool = True,
+    max_essentials: int = 24,
+    auto_pivot: bool = True,
+    early_ratio: float = 0.4,
     ):
         # safe parse width/height if provided as strings
         def _to_int(v, default):
@@ -475,16 +514,33 @@ class SDXLPromptStyler:
             except Exception:
                 pass
 
-        # 2) naive budgeting: favor early info, move long-tail aesthetics to late
+        # 2) budgeting: favor early info, move long-tail aesthetics to late
         parts = [p.strip() for p in re.split(r"[.;\n]+", styled) if p.strip()]
         if not parts:
             parts = [styled]
-        pivot = max(1, int(len(parts) * 0.4))
+        # auto pivot based on approximate token load vs budget
+        ratio = max(0.2, min(0.8, float(early_ratio)))
+        if auto_pivot:
+            try:
+                approx_words = len(re.findall(r"\w+", styled))
+                budget = int(token_budget) if token_budget else 75
+                load = approx_words / max(1, budget)
+                # map load in [0.5..2.0] to ratio in [0.35..0.65]
+                load = max(0.5, min(2.0, load))
+                ratio = 0.35 + (load - 0.5) * (0.30 / 1.5)
+                ratio = max(0.3, min(0.7, ratio))
+            except Exception:
+                pass
+        pivot = max(1, int(len(parts) * ratio))
         early_text = ", ".join(parts[:pivot])
         late_text = ", ".join(parts[pivot:]) if len(parts) > pivot else ""
 
         # 3) essentials from strict or auto
-        essentials_text = _pick_essentials(styled, _split_keywords(strict_keywords))
+        strict_list = _split_keywords(strict_keywords)
+        if strict_list:
+            essentials_text = ", ".join(strict_list)
+        else:
+            essentials_text = _pick_essentials(styled, [], max_essentials) if auto_essentials else ""
 
         # 4) negative hygiene
         neg_text = _clean_neg(negative, style, normalize_negatives)
