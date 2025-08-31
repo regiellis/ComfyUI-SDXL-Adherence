@@ -195,7 +195,14 @@ def _ensure_text(x) -> str:
         return ""
 
 
-def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
+def _pick_essentials(
+    prompt: str,
+    strict: list[str],
+    max_out: int = 24,
+    strategy: str = "balanced",
+    blocklist=None,
+    allowlist=None,
+) -> str:
     """Extract a compact, order-preserving essentials string from the prompt.
 
     Heuristics (no heavy NLP):
@@ -216,13 +223,14 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
     s_clean = re.sub(r":\s*\d+(?:\.\d+)?", "", s)
     keep: list[str] = []
     seen: set[str] = set()
+    blockset = set((blocklist or []))
 
     def _add(x: str):
         x = (x or "").strip().strip(",")
         if not x:
             return
         k = x.lower()
-        if k in seen:
+        if k in seen or k in blockset:
             return
         seen.add(k)
         keep.append(x)
@@ -252,11 +260,16 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
         if tok.lower() not in STYLE_NOISE:
             _add(tok)
 
-    # 4) Ratios and units (skip bare numbers/decimals)
-    for tok in re.findall(r"\b\d+\s*[:xX]\s*\d+\b", s_clean):
-        _add(tok.replace(" ", ""))
-    for tok in re.findall(r"\b\d+(?:\.\d+)?\s?(?:mm|cm|k|m|mp|fps)\b", s_clean, flags=re.I):
-        _add(tok)
+    # 4) Numbers/ratios/units based on strategy
+    strat = (strategy or "balanced").lower()
+    if strat in ("balanced", "aggressive"):
+        for tok in re.findall(r"\b\d+\s*[:xX]\s*\d+\b", s_clean):
+            _add(tok.replace(" ", ""))
+        for tok in re.findall(r"\b\d+(?:\.\d+)?\s?(?:mm|cm|k|m|mp|fps)\b", s_clean, flags=re.I):
+            _add(tok)
+        if strat == "aggressive":
+            for tok in re.findall(r"\b\d+(?:\.\d+)?\b", s_clean):
+                _add(tok)
 
     # 5) Colors paired with common nouns; avoid standalone colors
     _color_pat = r"\b(?:" + "|".join(sorted(COLORS)) + r")\b"
@@ -278,6 +291,10 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
         if tok.lower() in STYLE_NOISE:
             continue
         _add(tok)
+
+    # Allowlist (force include)
+    for t in (allowlist or []):
+        _add(t)
 
     # Cap length to avoid bloating the essentials channel
     if len(keep) > max_out:
@@ -430,6 +447,29 @@ class SDXLPromptStyler:
                         "tooltip": "Maximum items to include in essentials.",
                     },
                 ),
+                "essentials_strategy": (
+                    ["off", "conservative", "balanced", "aggressive"],
+                    {
+                        "default": "balanced",
+                        "tooltip": "Controls how essentials are extracted (off uses strict only).",
+                    },
+                ),
+                "noise_blocklist": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated terms to exclude from essentials.",
+                    },
+                ),
+                "noise_allowlist": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated terms to force-include in essentials.",
+                    },
+                ),
                 "auto_pivot": (
                     "BOOLEAN",
                     {
@@ -469,6 +509,9 @@ class SDXLPromptStyler:
         dims_json: str = "",
         auto_essentials: bool = True,
         max_essentials: int = 24,
+    essentials_strategy: str = "balanced",
+    noise_blocklist: str = "",
+    noise_allowlist: str = "",
         auto_pivot: bool = True,
         early_ratio: float = 0.4,
     ):
@@ -569,12 +612,22 @@ class SDXLPromptStyler:
 
         # 3) essentials from strict or auto
         strict_list = _split_keywords(strict_keywords)
+        block_list = set(t.lower() for t in _split_keywords(noise_blocklist))
+        allow_list = _split_keywords(noise_allowlist)
         if strict_list:
             essentials_text = ", ".join(strict_list)
         else:
-            essentials_text = (
-                _pick_essentials(styled, [], max_essentials) if auto_essentials else ""
-            )
+            if (not auto_essentials) or (essentials_strategy == "off"):
+                essentials_text = ""
+            else:
+                essentials_text = _pick_essentials(
+                    styled,
+                    [],
+                    max_out=max_essentials,
+                    strategy=essentials_strategy,
+                    blocklist=block_list,
+                    allowlist=allow_list,
+                )
 
         # 4) negative hygiene
         neg_text = _clean_neg(negative, style, normalize_negatives)
