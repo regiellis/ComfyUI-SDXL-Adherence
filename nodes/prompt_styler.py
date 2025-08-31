@@ -125,6 +125,17 @@ STYLE_NOISE = {
     "portrait",
     "product",
     "background",
+    # Generic/common words we don't want as essentials
+    "realistic",
+    "photo",
+    "photograph",
+    "image",
+    "picture",
+    "head",
+    "face",
+    "face-shape",
+    "body",
+    "expression",
 }
 
 STOPWORDS = {
@@ -201,6 +212,8 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
         return ", ".join([s for s in strict if s])
 
     s = (prompt or "").strip()
+    # Remove weight suffixes like :1.15 so decimals don't leak into essentials
+    s_clean = re.sub(r":\s*\d+(?:\.\d+)?", "", s)
     keep: list[str] = []
     seen: set[str] = set()
 
@@ -215,7 +228,7 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
         keep.append(x)
 
     # 1) Quoted phrases
-    for m in re.finditer(r'"([^"]+)"|\'([^\']+)\'', s):
+    for m in re.finditer(r'"([^"]+)"|\'([^\']+)\'', s_clean):
         phrase = m.group(1) or m.group(2)
         if phrase:
             _add(phrase)
@@ -223,7 +236,7 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
     # 2) Subject chunk: before first common preposition/connector
     subject_chunk = re.split(
         r"\b(with|featuring|wearing|holding|using|in|on|at|of|and)\b",
-        s,
+        s_clean,
         maxsplit=1,
     )[0]
     for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-_/]*", subject_chunk):
@@ -235,24 +248,31 @@ def _pick_essentials(prompt: str, strict: list[str], max_out: int = 24) -> str:
         _add(tok)
 
     # 3) Hyphenated compounds anywhere
-    for tok in re.findall(r"\b[\w]+(?:-[\w]+)+\b", s):
+    for tok in re.findall(r"\b[\w]+(?:-[\w]+)+\b", s_clean):
         if tok.lower() not in STYLE_NOISE:
             _add(tok)
 
-    # 4) Numbers, ratios, and units
-    for tok in re.findall(r"\b\d+(?:\.\d+)?\b(?:\s?(?:mm|cm|k|m|mp|fps))?", s, flags=re.I):
-        _add(tok)
-    for tok in re.findall(r"\b\d+\s*[:xX]\s*\d+\b", s):
+    # 4) Ratios and units (skip bare numbers/decimals)
+    for tok in re.findall(r"\b\d+\s*[:xX]\s*\d+\b", s_clean):
         _add(tok.replace(" ", ""))
+    for tok in re.findall(r"\b\d+(?:\.\d+)?\s?(?:mm|cm|k|m|mp|fps)\b", s_clean, flags=re.I):
+        _add(tok)
 
-    # 5) Colors and materials
-    for tok in re.findall(r"[A-Za-z]+", s):
+    # 5) Colors paired with common nouns; avoid standalone colors
+    _color_pat = r"\b(?:" + "|".join(sorted(COLORS)) + r")\b"
+    _noun_pat = r"\b(eyes|hair|skin|lips|mouth|beard|mustache|brows|eyebrows|shirt|dress|coat|jacket|pants|fur|feathers)\b"
+    for m in re.finditer(_color_pat + r"\s+" + _noun_pat, s_clean, flags=re.I):
+        col = m.group(0).split()[0]
+        noun = m.group(0).split()[-1]
+        _add(f"{col.lower()} {noun.lower()}")
+    # Also keep material words (often meaningful)
+    for tok in re.findall(r"[A-Za-z]+", s_clean):
         tl = tok.lower()
-        if tl in COLORS or tl in MATERIALS:
+        if tl in MATERIALS:
             _add(tl)
 
     # 6) Proper nouns (allow 1–3 capitalized tokens)
-    for tok in re.findall(r"\b(?:[A-Z][a-z0-9]+)(?:\s+[A-Z][a-z0-9]+){0,2}\b", s):
+    for tok in re.findall(r"\b(?:[A-Z][a-z0-9]+)(?:\s+[A-Z][a-z0-9]+){0,2}\b", s_clean):
         if tok.isupper():
             continue  # avoid acronyms screaming
         if tok.lower() in STYLE_NOISE:
@@ -447,10 +467,10 @@ class SDXLPromptStyler:
         height=1024,
         aspect_tweaks: bool = False,
         dims_json: str = "",
-    auto_essentials: bool = True,
-    max_essentials: int = 24,
-    auto_pivot: bool = True,
-    early_ratio: float = 0.4,
+        auto_essentials: bool = True,
+        max_essentials: int = 24,
+        auto_pivot: bool = True,
+        early_ratio: float = 0.4,
     ):
         # safe parse width/height if provided as strings
         def _to_int(v, default):
@@ -516,11 +536,7 @@ class SDXLPromptStyler:
 
         # 2) budgeting: favor early info, move long-tail aesthetics to late
         # Split on semicolons/newlines (and sentence-ending periods that are NOT decimals)
-        parts = [
-            p.strip()
-            for p in re.split(r"(?<!\d)\.(?!\d)|[;\n]+", styled)
-            if p.strip()
-        ]
+        parts = [p.strip() for p in re.split(r"(?<!\d)\.(?!\d)|[;\n]+", styled) if p.strip()]
         if not parts:
             parts = [styled]
         # auto pivot based on approximate token load vs budget
@@ -544,7 +560,7 @@ class SDXLPromptStyler:
         def _clean_commas(s: str) -> str:
             if not s:
                 return s
-            s = re.sub(r"\s*,\s*", ", ", s)   # normalize comma spacing
+            s = re.sub(r"\s*,\s*", ", ", s)  # normalize comma spacing
             s = re.sub(r"(?:,\s*){2,}", ", ", s)  # collapse duplicate commas
             return s.strip(" ,")
 
@@ -556,7 +572,9 @@ class SDXLPromptStyler:
         if strict_list:
             essentials_text = ", ".join(strict_list)
         else:
-            essentials_text = _pick_essentials(styled, [], max_essentials) if auto_essentials else ""
+            essentials_text = (
+                _pick_essentials(styled, [], max_essentials) if auto_essentials else ""
+            )
 
         # 4) negative hygiene
         neg_text = _clean_neg(negative, style, normalize_negatives)
