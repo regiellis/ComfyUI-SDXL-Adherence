@@ -58,6 +58,15 @@ That’s it. Bigger images? Smart Latent snaps sizes to 64 safely and uses tiled
 - Crop By BBox (helper)
 	- After decode, crops padded generations back to the original content.
 
+- Auto-Size 64 (MP) (helper)
+	- Pick target megapixels and snap W/H to 64-multiples. Size: Auto/1.0MP/1.5MP/2.0MP.
+
+- Negative Prompt Helper (helper)
+	- Toggle Realism Negs to merge a vetted pack with your negatives and de-dup.
+
+- Post Polish (Film Touch) (helper)
+	- Tiny tone S-curve + subtle grain for micro-texture. Place last.
+
 ---
 
 ## Install
@@ -105,6 +114,14 @@ Outputs include dims_json and bbox_json so you can align hints 1:1 and crop back
 
 (cond+, cond-) + (model, latent) -> [KSampler] -> [VAE Decode]
 											└─> (image)
+
+Optional helpers:
+
+Image → Auto-Size 64 → Smart Latent/Encode
+
+Neg → Negative Prompt Helper → SDXL Dual CLIP Encode (negative)
+
+… → VAE Decode → Post Polish → (final)
 Optional: [Crop By BBox] with bbox_json -> (image cropped)
 ```
 
