@@ -1,8 +1,8 @@
 {
   "id": "sdxl-adherence-basic-text-only",
   "revision": 0,
-  "last_node_id": 8,
-  "last_link_id": 12,
+  "last_node_id": 10,
+  "last_link_id": 20,
   "nodes": [
     {
       "id": 1,
@@ -43,6 +43,7 @@
         "empty",
         1024,
         1024,
+        "Use width/height",
         "pad_up",
         "reflect",
         128,
@@ -52,14 +53,13 @@
         true,
         true,
         123456789,
-        "fixed",
         1048576,
         0
       ]
     },
     {
       "id": 3,
-      "type": "SDXLAdherencePromptStyler",
+      "type": "SDXLPromptStyler",
       "pos": [ -600, 120 ],
       "size": [ 456, 620 ],
       "flags": {},
@@ -74,7 +74,7 @@
         { "name": "neg_text", "type": "STRING", "links": [10] },
         { "name": "essentials_text", "type": "STRING", "links": [11] }
       ],
-      "properties": { "Node name for S&R": "SDXLAdherencePromptStyler" },
+  "properties": { "Node name for S&R": "SDXLPromptStyler" },
       "widgets_values": [
         "cinematic portrait of a woman, natural light, shallow depth of field, rich skin texture, 85mm lens",
         "",
@@ -90,7 +90,7 @@
     },
     {
       "id": 4,
-      "type": "SDXLAdherenceDualClipEncode",
+      "type": "SDXLDualClipEncode",
       "pos": [ 440, -20 ],
       "size": [ 400, 384 ],
       "flags": {},
@@ -109,7 +109,7 @@
         { "name": "cond_positive", "type": "CONDITIONING", "links": [12] },
         { "name": "cond_negative", "type": "CONDITIONING", "links": [13] }
       ],
-      "properties": { "Node name for S&R": "SDXLAdherenceDualClipEncode" },
+  "properties": { "Node name for S&R": "SDXLDualClipEncode" },
       "widgets_values": [ "", "", "", "", 0.4, 0.35, 2, 0, 1024, 1024 ]
     },
     {
@@ -142,19 +142,19 @@
         { "name": "samples", "type": "LATENT", "link": 14 },
         { "name": "vae", "type": "VAE", "link": 11 }
       ],
-      "outputs": [ { "name": "IMAGE", "type": "IMAGE", "links": [15] } ],
+      "outputs": [ { "name": "IMAGE", "type": "IMAGE", "links": [18] } ],
       "properties": { "Node name for S&R": "VAEDecode" },
       "widgets_values": []
     },
     {
       "id": 7,
       "type": "SaveImage",
-      "pos": [ 1400, -40 ],
+      "pos": [ 1600, -40 ],
       "size": [ 360, 200 ],
       "flags": {},
-      "order": 7,
+      "order": 9,
       "mode": 0,
-      "inputs": [ { "name": "images", "type": "IMAGE", "link": 15 } ],
+      "inputs": [ { "name": "images", "type": "IMAGE", "link": 19 } ],
       "outputs": [],
       "properties": { "Node name for S&R": "SaveImage" },
       "widgets_values": [ "ComfyUI" ]
@@ -162,15 +162,43 @@
     {
       "id": 8,
       "type": "PreviewImage",
-      "pos": [ 1400, 200 ],
+      "pos": [ 1600, 200 ],
       "size": [ 400, 300 ],
       "flags": {},
-      "order": 8,
+      "order": 10,
       "mode": 0,
-      "inputs": [ { "name": "images", "type": "IMAGE", "link": 15 } ],
+      "inputs": [ { "name": "images", "type": "IMAGE", "link": 20 } ],
       "outputs": [],
       "properties": { "Node name for S&R": "PreviewImage" },
       "widgets_values": []
+    },
+    {
+      "id": 9,
+      "type": "NegativePromptHelper",
+      "pos": [ 60, 300 ],
+      "size": [ 320, 120 ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        { "name": "negative", "type": "STRING", "link": 10 }
+      ],
+      "outputs": [ { "name": "neg_text", "type": "STRING", "links": [17] } ],
+      "properties": { "Node name for S&R": "NegativePromptHelper" },
+      "widgets_values": [ "", true, "cartoon, illustration, anime, cgi, plastic skin, overprocessed, oversharpened, waxy, low detail, smooth skin, extra fingers" ]
+    },
+    {
+      "id": 10,
+      "type": "PostPolish",
+      "pos": [ 1400, -40 ],
+      "size": [ 240, 100 ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [ { "name": "image", "type": "IMAGE", "link": 18 } ],
+      "outputs": [ { "name": "image", "type": "IMAGE", "links": [19,20] } ],
+      "properties": { "Node name for S&R": "PostPolish" },
+      "widgets_values": [ true, 0.1, 0.02 ]
     }
   ],
   "links": [
@@ -183,13 +211,15 @@
     [7, 2, 3, 4, 6, "INT"],
     [8, 3, 0, 4, 1, "STRING"],
     [9, 3, 1, 4, 2, "STRING"],
-    [10, 3, 2, 4, 3, "STRING"],
+  [10, 3, 2, 9, 0, "STRING"],
     [11, 1, 2, 6, 1, "VAE"],
-    [12, 4, 0, 5, 1, "CONDITIONING"],
-    [13, 4, 1, 5, 2, "CONDITIONING"],
-    [14, 5, 0, 6, 0, "LATENT"],
-    [15, 6, 0, 7, 0, "IMAGE"],
-    [16, 6, 0, 8, 0, "IMAGE"]
+  [12, 4, 0, 5, 1, "CONDITIONING"],
+  [13, 4, 1, 5, 2, "CONDITIONING"],
+  [14, 5, 0, 6, 0, "LATENT"],
+  [17, 9, 0, 4, 3, "STRING"],
+  [18, 6, 0, 10, 0, "IMAGE"],
+  [19, 10, 0, 7, 0, "IMAGE"],
+  [20, 10, 0, 8, 0, "IMAGE"]
   ],
   "groups": [],
   "config": {},
